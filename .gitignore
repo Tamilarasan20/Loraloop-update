@@ -1,0 +1,29 @@
+# Dependencies
+**/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+
+# Build Artifacts
+**/.next/
+**/out/
+**/build/
+**/dist/
+
+# Env & Secrets
+**/.env.local
+**/.env.*.local
+.env.postiz
+
+# OS Files
+.DS_Store
+Thumbs.db
+*.log
+
+# Docker & Volumes
+postgres-volume/
+postiz-redis-data/
+postiz-config/
+postiz-uploads/
+temporal-es-data/
+temporal-pg-data/
