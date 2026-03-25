@@ -17,7 +17,7 @@ interface ContentItem {
 const MOCK_CONTENT: ContentItem[] = [
   { id: "1", title: "Product Launch Post", content: "Introducing our latest AI feature that helps you...", platforms: ["x", "linkedin"], status: "scheduled", date: "Mar 20, 2026 09:00 AM" },
   { id: "2", title: "Weekly Tips Thread", content: "5 tips for growing your social presence in 2026...", platforms: ["x"], status: "draft" },
-  { id: "3", title: "Behind the Scenes", content: "Take a look at how we build products at Growloop...", platforms: ["instagram"], status: "published", engagement: 1240 },
+  { id: "3", title: "Behind the Scenes", content: "Take a look at how we build products at ScaleSoci...", platforms: ["instagram"], status: "published", engagement: 1240 },
   { id: "4", title: "Blog Promotion", content: "Our latest blog post on AI automation is live!", platforms: ["linkedin", "x"], status: "published", engagement: 890 },
   { id: "5", title: "Team Spotlight", content: "Meet our new engineering lead, Sarah Chen!", platforms: ["linkedin", "instagram"], status: "draft" },
   { id: "6", title: "Customer Success Story", content: "How company X grew their audience by 300%...", platforms: ["linkedin"], status: "failed" },
@@ -49,28 +49,28 @@ export default function ContentPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[#1B1B1B] text-[#EAEAEA]">
+    <div className="min-h-screen bg-gray-50 text-gray-900">
       {/* Top Bar */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white sticky top-0 z-20">
         <div className="flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2 text-[#9A9A9C] hover:text-[#EAEAEA] transition-colors text-[14px] font-medium">
+          <Link href="/" className="flex items-center gap-2 text-gray-400 hover:text-gray-900 transition-colors text-[14px] font-bold uppercase tracking-wider">
             <ArrowLeft className="w-4 h-4" />
             Back
           </Link>
-          <div className="w-px h-6 bg-white/10" />
-          <h1 className="text-[20px] font-medium">Content Library</h1>
+          <div className="w-px h-6 bg-gray-200" />
+          <h1 className="text-[20px] font-bold tracking-tight">Content Library</h1>
         </div>
         <div className="flex items-center gap-3">
           <Link
             href="/calendar"
-            className="flex items-center gap-2 border border-white/10 text-[#EAEAEA] px-5 py-2.5 rounded-full font-semibold text-[13px] hover:bg-white/5 transition-colors"
+            className="flex items-center gap-2 border border-gray-200 bg-white text-gray-600 px-5 py-2.5 rounded-full font-bold text-[13px] hover:bg-gray-50 transition-all shadow-sm active:scale-95"
           >
             <Calendar className="w-4 h-4" />
             Calendar
           </Link>
           <Link
             href="/campaigns/create"
-            className="flex items-center gap-2 bg-[#C1CD7D] text-[#1B1B1B] px-5 py-2.5 rounded-full font-semibold text-[13px] hover:bg-[#D4E08F] transition-colors shadow-lg"
+            className="flex items-center gap-2 bg-lime-400 text-white px-6 py-2.5 rounded-full font-bold text-[13px] hover:bg-lime-500 transition-all shadow-md active:scale-95"
           >
             <Plus className="w-4 h-4" />
             New Post
@@ -78,28 +78,28 @@ export default function ContentPage() {
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-6 py-8 flex flex-col gap-6">
+      <div className="max-w-5xl mx-auto px-6 py-12 flex flex-col gap-10">
         {/* Filters & Search */}
-        <div className="flex items-center justify-between gap-4">
-          <div className="relative flex-1 max-w-[400px]">
-            <Search className="w-4 h-4 text-[#9A9A9C] absolute left-4 top-1/2 -translate-y-1/2" />
+        <div className="flex items-center justify-between gap-6">
+          <div className="relative flex-1 max-w-[450px]">
+            <Search className="w-5 h-5 text-gray-300 absolute left-4 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search content..."
-              className="w-full bg-[#2C2D2E] border border-transparent rounded-xl py-3 pl-11 pr-4 text-[#EAEAEA] text-[14px] outline-none focus:border-[#4A4B4D] font-medium placeholder-[#525355]"
+              className="w-full bg-white border border-gray-100 rounded-2xl py-4 pl-12 pr-4 text-gray-900 text-[14px] outline-none focus:border-lime-500 font-bold placeholder-gray-300 shadow-sm transition-all"
             />
           </div>
-          <div className="flex items-center gap-2 bg-[#2C2D2E] rounded-xl p-1 border border-white/5">
+          <div className="flex items-center gap-1.5 bg-white rounded-xl p-1.5 border border-gray-100 shadow-sm">
             {["all", "draft", "scheduled", "published", "failed"].map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors capitalize ${
+                className={`px-4 py-2 rounded-lg text-[11px] font-extrabold transition-all capitalize uppercase tracking-wider ${
                   filter === f
-                    ? "bg-[#363738] text-[#EAEAEA] shadow-sm"
-                    : "text-[#9A9A9C] hover:text-[#EAEAEA]"
+                    ? "bg-lime-400 text-white shadow-md shadow-lime-100"
+                    : "text-gray-400 hover:text-gray-900 hover:bg-gray-50"
                 }`}
               >
                 {f}
@@ -109,61 +109,67 @@ export default function ContentPage() {
         </div>
 
         {/* Content Stats */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-4 gap-6">
           {Object.entries(STATUS_CONFIG).map(([key, config]) => {
             const count = content.filter(c => c.status === key).length;
+            const Icon = config.icon;
             return (
               <button
                 key={key}
                 onClick={() => setFilter(key)}
-                className={`bg-[#2C2D2E] border border-white/5 rounded-2xl p-4 text-center hover:border-white/10 transition-colors ${
-                  filter === key ? "ring-1 ring-[#C1CD7D]" : ""
+                className={`bg-white border rounded-[24px] p-6 text-center hover:border-lime-300 transition-all shadow-sm group ${
+                  filter === key ? "ring-2 ring-lime-400 border-lime-400" : "border-gray-200"
                 }`}
               >
-                <config.icon className={`w-5 h-5 mx-auto mb-2 ${config.color}`} />
-                <div className="text-[22px] font-bold text-[#EAEAEA]">{count}</div>
-                <div className="text-[12px] text-[#9A9A9C] font-medium capitalize">{config.label}</div>
+                <Icon className={`w-6 h-6 mx-auto mb-3 transition-transform group-hover:scale-110 ${config.color}`} />
+                <div className="text-[28px] font-bold text-gray-900 mb-1">{count}</div>
+                <div className="text-[11px] text-gray-400 font-bold uppercase tracking-widest">{config.label}</div>
               </button>
             );
           })}
         </div>
 
         {/* Content List */}
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
+          <h2 className="text-[13px] font-bold text-gray-400 uppercase tracking-widest px-2">Recently Modified</h2>
           {filtered.length === 0 ? (
-            <div className="bg-[#2C2D2E] border border-white/5 rounded-2xl p-12 text-center">
-              <p className="text-[#9A9A9C] text-[14px]">No content found</p>
+            <div className="bg-white border border-gray-200 rounded-[32px] p-16 text-center shadow-inner">
+              <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-gray-100">
+                <Search className="w-8 h-8 text-gray-200" />
+              </div>
+              <p className="text-gray-400 font-bold">No content found matches your search</p>
             </div>
           ) : (
             filtered.map((item) => {
               const statusConfig = STATUS_CONFIG[item.status];
+              const StatusIcon = statusConfig.icon;
               return (
                 <div
                   key={item.id}
-                  className="bg-[#2C2D2E] border border-white/5 rounded-2xl p-5 flex items-center gap-5 hover:border-white/10 transition-colors group cursor-pointer"
+                  className="bg-white border border-gray-200 rounded-[24px] p-6 flex items-center gap-6 hover:border-lime-300 transition-all group cursor-pointer shadow-sm hover:shadow-md"
                 >
                   {/* Status */}
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${statusConfig.bg}`}>
-                    <statusConfig.icon className={`w-5 h-5 ${statusConfig.color}`} />
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-inner border border-transparent ${statusConfig.bg.replace('white/5', 'gray-50')}`}>
+                    <StatusIcon className={`w-6 h-6 ${statusConfig.color}`} />
                   </div>
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-[14px] font-medium text-[#EAEAEA] mb-0.5">
+                    <h4 className="text-[16px] font-bold text-gray-900 mb-1 leading-tight">
                       {item.title}
                     </h4>
-                    <p className="text-[13px] text-[#9A9A9C] truncate">{item.content}</p>
+                    <p className="text-[14px] text-gray-500 font-bold truncate tracking-tight">{item.content}</p>
                   </div>
 
                   {/* Platforms */}
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     {item.platforms.map((p) => {
                       const pConfig = PLATFORM_ICONS[p];
                       return (
                         <div
                           key={p}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-[10px] font-bold"
-                          style={{ backgroundColor: pConfig?.color || "#363738" }}
+                          className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-[12px] font-bold shadow-sm"
+                          style={{ backgroundColor: pConfig?.color || "#e5e7eb" }}
                         >
                           {pConfig?.icon || "?"}
                         </div>
@@ -172,24 +178,24 @@ export default function ContentPage() {
                   </div>
 
                   {/* Date / Engagement */}
-                  <div className="text-right shrink-0 w-[120px]">
+                  <div className="text-right shrink-0 w-[140px]">
                     {item.date && (
-                      <span className="text-[12px] text-[#9A9A9C] font-medium">{item.date}</span>
+                      <span className="text-[13px] text-gray-400 font-bold uppercase tracking-tighter">{item.date}</span>
                     )}
                     {item.engagement && (
-                      <span className="text-[12px] text-[#C1CD7D] font-semibold">
-                        {item.engagement.toLocaleString()} engagements
+                      <span className="text-[13px] text-lime-600 font-extrabold block">
+                        {item.engagement.toLocaleString()} 🔥
                       </span>
                     )}
                   </div>
 
                   {/* Actions */}
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button className="p-2 rounded-lg hover:bg-white/5 text-[#9A9A9C]">
-                      <MoreHorizontal className="w-4 h-4" />
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
+                    <button className="p-2.5 rounded-xl hover:bg-gray-50 text-gray-400 hover:text-gray-900 transition-all">
+                      <MoreHorizontal className="w-5 h-5" />
                     </button>
-                    <button className="p-2 rounded-lg hover:bg-red-500/10 text-[#9A9A9C] hover:text-red-400">
-                      <Trash2 className="w-4 h-4" />
+                    <button className="p-2.5 rounded-xl hover:bg-red-50 text-red-400 transition-all">
+                      <Trash2 className="w-5 h-5" />
                     </button>
                   </div>
                 </div>

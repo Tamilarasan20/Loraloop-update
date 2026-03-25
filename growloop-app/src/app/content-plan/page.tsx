@@ -21,7 +21,7 @@ interface ChannelConnection {
 
 const CONTENT_PLAN_CHANNELS: ChannelConnection[] = [
   // In your Content Plan — Autopilot channels
-  { id: "1", name: "Instagram", type: "instagram", icon: "📷", color: "#E1306C", gradientFrom: "#F58529", gradientTo: "#DD2A7B", connected: true, username: "@growloop.ai", category: "social" },
+  { id: "1", name: "Instagram", type: "instagram", icon: "📷", color: "#E1306C", gradientFrom: "#F58529", gradientTo: "#DD2A7B", connected: true, username: "@scalesoci.ai", category: "social" },
   { id: "2", name: "Facebook", type: "facebook", icon: "f", color: "#1877F2", connected: false, category: "social" },
   { id: "3", name: "YouTube", type: "youtube", icon: "▶", color: "#FF0000", connected: false, category: "social" },
   { id: "4", name: "WordPress", type: "wordpress", icon: "W", color: "#21759B", connected: false, category: "blog", switchable: true, alternates: [{ name: "Medium", type: "medium" }, { name: "Ghost", type: "ghost" }, { name: "Webflow", type: "webflow" }] },
@@ -50,17 +50,17 @@ const CATEGORY_LABELS: Record<string, { label: string; description: string }> = 
 
 function ChannelCard({ channel, numbered, showSwitch }: { channel: ChannelConnection; numbered?: number; showSwitch?: boolean }) {
   return (
-    <div className="flex items-center gap-4 bg-[#2C2D2E] border border-white/5 rounded-2xl px-5 py-4 hover:border-white/10 transition-all group">
+    <div className="flex items-center gap-4 bg-white border border-gray-200 rounded-2xl px-5 py-5 hover:border-lime-300 transition-all group shadow-sm">
       {/* Number */}
       {numbered !== undefined && (
-        <span className="text-[14px] font-semibold text-[#525355] w-5 text-center shrink-0">
+        <span className="text-[14px] font-bold text-gray-300 w-5 text-center shrink-0">
           {numbered}
         </span>
       )}
 
       {/* Icon */}
       <div
-        className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold text-[16px] shrink-0 shadow-lg"
+        className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-bold text-[18px] shrink-0 shadow-md"
         style={
           channel.gradientFrom
             ? { background: `linear-gradient(135deg, ${channel.gradientFrom}, ${channel.gradientTo || channel.color})` }
@@ -73,32 +73,32 @@ function ChannelCard({ channel, numbered, showSwitch }: { channel: ChannelConnec
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-[15px] font-semibold text-[#EAEAEA]">{channel.name}</span>
+          <span className="text-[15px] font-bold text-gray-900">{channel.name}</span>
           {channel.connected && (
-            <span className="text-[10px] bg-green-500/15 text-green-400 px-2 py-0.5 rounded-full font-semibold">
+            <span className="text-[10px] bg-green-50 text-green-600 border border-green-100 px-2.5 py-0.5 rounded-full font-bold uppercase">
               Connected
             </span>
           )}
         </div>
         {channel.username && (
-          <span className="text-[12px] text-[#9A9A9C]">{channel.username}</span>
+          <span className="text-[12px] text-gray-500 font-medium">{channel.username}</span>
         )}
       </div>
 
       {/* Actions */}
       <div className="flex items-center gap-2 shrink-0">
         {showSwitch && channel.switchable && (
-          <button className="text-[11px] bg-[#363738] text-[#9A9A9C] hover:text-[#EAEAEA] px-3 py-1.5 rounded-xl font-semibold hover:bg-[#414244] transition-colors flex items-center gap-1.5">
+          <button className="text-[11px] bg-gray-50 text-gray-400 hover:text-gray-900 px-3 py-1.5 rounded-xl font-bold hover:bg-gray-100 transition-all flex items-center gap-1.5 uppercase tracking-wider">
             <RefreshCw className="w-3 h-3" />
-            Switch Platform
+            Switch
           </button>
         )}
         
         <button
-          className={`px-5 py-2 rounded-xl font-semibold text-[13px] transition-all ${
+          className={`px-6 py-2 rounded-xl font-bold text-[13px] transition-all shadow-sm active:scale-95 ${
             channel.connected
-              ? "bg-[#363738] text-[#9A9A9C] hover:bg-[#414244] hover:text-[#EAEAEA]"
-              : "bg-[#C1CD7D] text-[#1B1B1B] hover:bg-[#D4E08F] shadow-md"
+              ? "bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-900 border border-gray-100"
+              : "bg-lime-400 text-white hover:bg-lime-500"
           }`}
         >
           {channel.connected ? (
@@ -129,50 +129,50 @@ export default function ContentPlanPage() {
     .filter((g) => g.channels.length > 0);
 
   return (
-    <div className="min-h-screen bg-[#1B1B1B] text-[#EAEAEA]">
+    <div className="min-h-screen bg-gray-50 text-gray-900">
       {/* Top Bar */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white sticky top-0 z-20">
         <div className="flex items-center gap-4">
           <Link
             href="/"
-            className="flex items-center gap-2 text-[#9A9A9C] hover:text-[#EAEAEA] transition-colors text-[14px] font-medium"
+            className="flex items-center gap-2 text-gray-400 hover:text-gray-900 transition-colors text-[14px] font-bold uppercase tracking-wider"
           >
             <ArrowLeft className="w-4 h-4" />
             Back
           </Link>
-          <div className="w-px h-6 bg-white/10" />
-          <h1 className="text-[20px] font-medium">Content Plan</h1>
+          <div className="w-px h-6 bg-gray-200" />
+          <h1 className="text-[20px] font-bold">Content Plan</h1>
         </div>
-        <button className="flex items-center gap-2 bg-[#C1CD7D] text-[#1B1B1B] px-5 py-2.5 rounded-full font-semibold text-[13px] hover:bg-[#D4E08F] transition-colors shadow-lg">
+        <button className="flex items-center gap-2 bg-lime-400 text-white px-6 py-2.5 rounded-full font-bold text-[13px] hover:bg-lime-500 transition-all shadow-md active:scale-95">
           <Zap className="w-4 h-4" />
           Enable Autopilot
         </button>
       </div>
 
-      <div className="max-w-3xl mx-auto px-6 py-8 flex flex-col gap-10">
+      <div className="max-w-3xl mx-auto px-6 py-12 flex flex-col gap-12">
         {/* ─── In Your Content Plan ─── */}
         <section>
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-[17px] font-semibold text-[#EAEAEA]">
+            <h2 className="text-[20px] font-bold text-gray-900 tracking-tight">
               In your Content Plan
             </h2>
           </div>
-          <p className="text-[13px] text-[#9A9A9C] mb-5 font-medium">
+          <p className="text-[14px] text-gray-500 mb-8 font-medium">
             Autopilot will create and autopost content for these channels
           </p>
 
           {/* Grouped by category */}
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-8">
             {/* Social Media */}
             {(() => {
               const socialChannels = planChannels.filter((c) => c.category === "social");
               if (socialChannels.length === 0) return null;
               return (
                 <div>
-                  <label className="text-[11px] font-bold text-[#9A9A9C] uppercase tracking-widest mb-3 block">
+                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4 block">
                     Social Media
                   </label>
-                  <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-3.5">
                     {socialChannels.map((channel, i) => (
                       <ChannelCard key={channel.id} channel={channel} numbered={i + 1} />
                     ))}
@@ -187,10 +187,10 @@ export default function ContentPlanPage() {
               if (blogChannels.length === 0) return null;
               return (
                 <div>
-                  <label className="text-[11px] font-bold text-[#9A9A9C] uppercase tracking-widest mb-3 block">
+                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4 block">
                     Blog
                   </label>
-                  <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-3.5">
                     {blogChannels.map((channel, i) => (
                       <ChannelCard key={channel.id} channel={channel} numbered={planChannels.filter(c => c.category === "social").length + i + 1} showSwitch />
                     ))}
@@ -205,10 +205,10 @@ export default function ContentPlanPage() {
               if (emailChannels.length === 0) return null;
               return (
                 <div>
-                  <label className="text-[11px] font-bold text-[#9A9A9C] uppercase tracking-widest mb-3 block">
+                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4 block">
                     Email
                   </label>
-                  <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-3.5">
                     {emailChannels.map((channel, i) => (
                       <ChannelCard key={channel.id} channel={channel} numbered={planChannels.filter(c => c.category !== "email").length + i + 1} showSwitch />
                     ))}
@@ -220,24 +220,24 @@ export default function ContentPlanPage() {
         </section>
 
         {/* Divider */}
-        <div className="border-t border-white/5" />
+        <div className="border-t border-gray-200" />
 
         {/* ─── Available to Add ─── */}
         <section>
-          <h2 className="text-[17px] font-semibold text-[#EAEAEA] mb-2">
-            Available to add to your Content Plan
+          <h2 className="text-[20px] font-bold text-gray-900 tracking-tight mb-2">
+            Available to add
           </h2>
-          <p className="text-[13px] text-[#9A9A9C] mb-6 font-medium">
+          <p className="text-[14px] text-gray-500 mb-8 font-medium">
             Connect additional platforms and tools to expand your content reach
           </p>
 
-          <div className="flex flex-col gap-8">
+          <div className="flex flex-col gap-10">
             {groupedAvailable.map((group) => (
               <div key={group.key}>
-                <label className="text-[11px] font-bold text-[#9A9A9C] uppercase tracking-widest mb-3 block">
+                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-4 block">
                   {group.label}
                 </label>
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-3.5">
                   {group.channels.map((channel) => (
                     <ChannelCard key={channel.id} channel={channel} />
                   ))}
@@ -248,19 +248,19 @@ export default function ContentPlanPage() {
         </section>
 
         {/* Integration Help */}
-        <div className="bg-[#2C2D2E] border border-white/5 rounded-2xl p-6 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-[#C1CD7D]/15 flex items-center justify-center text-[#C1CD7D] shrink-0">
-            <ExternalLink className="w-6 h-6" />
+        <div className="bg-white border border-gray-200 rounded-[28px] p-8 flex items-center gap-6 shadow-sm mb-12">
+          <div className="w-14 h-14 rounded-2xl bg-lime-50 flex items-center justify-center text-lime-600 shrink-0 shadow-inner">
+            <ExternalLink className="w-7 h-7" />
           </div>
           <div className="flex-1">
-            <h4 className="text-[14px] font-semibold text-[#EAEAEA] mb-0.5">
+            <h4 className="text-[16px] font-bold text-gray-900 mb-1">
               Need a different integration?
             </h4>
-            <p className="text-[13px] text-[#9A9A9C]">
+            <p className="text-[14px] text-gray-500 font-bold">
               Use Zapier to connect 5,000+ apps or request a custom integration.
             </p>
           </div>
-          <button className="text-[#C1CD7D] text-[13px] font-semibold hover:underline shrink-0">
+          <button className="text-lime-600 text-[14px] font-bold hover:underline shrink-0 bg-lime-50 px-5 py-2 rounded-xl">
             Learn More →
           </button>
         </div>

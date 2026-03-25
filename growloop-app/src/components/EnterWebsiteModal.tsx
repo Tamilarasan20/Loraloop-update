@@ -24,8 +24,11 @@ export default function EnterWebsiteModal({ onClose }: EnterWebsiteModalProps) {
   const handleContinue = () => {
     if (!url.trim()) return;
     
-    // In a real app we'd validate URL format extensively here.
-    // Transition to loading visualizer
+    // Clear any stale brand data from a previous session
+    localStorage.removeItem("brandDna");
+    localStorage.removeItem("brandScreenshot");
+
+    // Navigate to loading page with the new URL
     router.push(`/loading?url=${encodeURIComponent(url)}`);
   };
 
@@ -33,19 +36,19 @@ export default function EnterWebsiteModal({ onClose }: EnterWebsiteModalProps) {
 
   return (
     <div 
-      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-opacity duration-300 ${
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md transition-opacity duration-300 ${
         isVisible ? "opacity-100" : "opacity-0"
       }`}
       onClick={handleClose}
     >
       <div 
-        className={`bg-[#2C2D2E] border border-white/5 rounded-[32px] p-8 w-full max-w-[500px] shadow-2xl relative transition-all duration-300 flex flex-col items-center text-center ${
+        className={`bg-white border border-gray-100 rounded-[32px] p-10 w-full max-w-[540px] shadow-2xl relative transition-all duration-300 flex flex-col items-center text-center ${
           isVisible ? "scale-100 translate-y-0" : "scale-95 translate-y-8"
         }`}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-3xl font-serif text-[#EAEAEA] italic mb-3">Enter your website</h2>
-        <p className="text-[14px] text-[#9A9A9C] mb-8 font-medium">
+        <h2 className="text-[34px] font-bold text-gray-900 mb-3 tracking-tight">Enter your website</h2>
+        <p className="text-[14px] text-gray-500 mb-8 font-medium">
           We&apos;ll analyze your business and generate your Business DNA
         </p>
 
@@ -55,7 +58,7 @@ export default function EnterWebsiteModal({ onClose }: EnterWebsiteModalProps) {
              value={url}
              onChange={(e) => setUrl(e.target.value)}
              placeholder="www.example.com"
-             className="w-full bg-[#1B1B1B] border border-transparent rounded-[16px] px-6 py-4 text-[#EAEAEA] text-[15px] outline-none focus:border-[#4A4B4D] transition-colors text-center font-medium placeholder-[#525355]"
+             className="w-full bg-gray-50 border border-gray-100 rounded-[12px] px-5 py-3.5 text-gray-900 text-[15px] outline-none focus:border-lime-500 transition-colors text-left font-bold placeholder-gray-400 shadow-inner"
              autoFocus
              onKeyDown={(e) => {
                if (e.key === 'Enter' && isValidUrl) {
@@ -68,13 +71,13 @@ export default function EnterWebsiteModal({ onClose }: EnterWebsiteModalProps) {
         <button 
           onClick={handleContinue}
           disabled={!isValidUrl}
-          className={`w-full py-4 rounded-[16px] font-semibold text-[15px] transition-all duration-300 ${
+          className={`w-full py-4 rounded-[12px] font-extrabold text-[14px] transition-all duration-300 shadow-md ${
             isValidUrl 
-              ? "bg-[#C1CD7D] text-[#1B1B1B] hover:bg-[#D4E08F] shadow-lg" 
-              : "bg-[#414244] text-[#9A9A9C] cursor-not-allowed opacity-70"
+              ? "bg-lime-400 text-white hover:bg-lime-500 active:scale-95" 
+              : "bg-gray-100 text-gray-300 cursor-not-allowed"
           }`}
         >
-          Continue
+          CONTINUE
         </button>
       </div>
     </div>

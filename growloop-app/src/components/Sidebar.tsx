@@ -2,14 +2,15 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Dna, Sparkles, Camera, CalendarDays, BarChart3, Zap, Users, FileText, PenSquare, LayoutGrid, Plug } from "lucide-react";
+import { Dna, Sparkles, Camera, CalendarDays, BarChart3, Zap, Users, FileText, PenSquare, LayoutGrid, Plug, Rocket, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { useSidebar } from "./SidebarProvider";
 
 const NAV_ITEMS = [
-  { href: "/board", label: "Brand DNA", icon: Dna },
+  { href: "/", label: "New Business DNA", icon: Sparkles },
+  { href: "/board", label: "Business DNA", icon: Dna },
   { href: "/campaigns", label: "Campaigns", icon: Sparkles },
-  { href: "/campaigns/create", label: "Create Post", icon: PenSquare },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/content", label: "Content", icon: FileText },
+  { href: "/content", label: "Content Library", icon: FileText },
   { href: "/content-plan", label: "Content Plan", icon: LayoutGrid },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/automation", label: "Automation", icon: Zap },
@@ -20,6 +21,7 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { isCollapsed, toggleSidebar } = useSidebar();
 
   // Don't show sidebar on the home page or loading screen
   const hiddenPaths = ["/", "/generate"];
@@ -28,18 +30,31 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="fixed top-0 left-0 h-full z-40 flex flex-col bg-[#1B1B1B] w-[240px] border-r border-white/5 pt-6">
-      {/* Logo Area */}
-      <div className="flex items-center px-6 mb-10">
-        <Link href="/" className="flex items-center group">
-          <span className="text-xl font-serif text-[#C1CD7D] tracking-wide">
-            google_labs
-          </span>
-        </Link>
+    <aside
+      className={`fixed top-0 left-0 h-full z-40 flex flex-col bg-[#F9FAFB] border-r border-gray-200 pt-6 transition-all duration-300 ${
+        isCollapsed ? "w-[80px]" : "w-[240px]"
+      }`}
+    >
+      {/* Logo Area & Toggle */}
+      <div className={`flex items-center mb-10 ${isCollapsed ? "justify-center px-0" : "justify-between px-6"}`}>
+        {!isCollapsed && (
+          <Link href="/" className="flex items-center group">
+            <span className="text-2xl font-black text-gray-900 tracking-tighter">
+              ScaleSoci
+            </span>
+          </Link>
+        )}
+        <button
+          onClick={toggleSidebar}
+          className="p-2 rounded-xl text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+          title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+        >
+          {isCollapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
+        </button>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 flex flex-col gap-2 px-3">
+      <nav className="flex-1 flex flex-col gap-1 px-3">
         {NAV_ITEMS.map((item) => {
           const isActive =
             pathname === item.href ||
@@ -50,14 +65,15 @@ export default function Sidebar() {
              <Link
                key={item.href}
                href={item.href}
-               className={`flex items-center gap-4 px-4 py-3 rounded-xl transition-colors font-medium text-[15px] ${
+               title={isCollapsed ? item.label : undefined}
+               className={`flex items-center ${isCollapsed ? "justify-center w-12 h-12 p-0 mx-auto" : "gap-4 px-4 py-2.5"} rounded-xl transition-all font-medium text-[14px] ${
                  isActive
-                   ? "bg-[#C1CD7D] text-[#1B1B1B]"
-                   : "text-[#9A9A9C] hover:text-[#EAEAEA] hover:bg-white/5"
+                   ? "bg-[#C1CD7D] text-white shadow-sm"
+                   : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
                }`}
              >
                <Icon className="w-5 h-5 shrink-0" />
-               <span className="whitespace-nowrap">{item.label}</span>
+               {!isCollapsed && <span className="whitespace-nowrap">{item.label}</span>}
              </Link>
           );
         })}
