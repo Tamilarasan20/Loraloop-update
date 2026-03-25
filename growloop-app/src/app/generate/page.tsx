@@ -72,21 +72,20 @@ function GenerateContent() {
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen text-center p-8 bg-gray-50">
-        <div className="bg-white border border-red-100 p-12 rounded-[32px] max-w-lg shadow-xl relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1.5 bg-red-400" />
-          <h2 className="text-2xl font-bold text-red-600 mb-4">DNA Extraction Failed</h2>
-          <p className="text-gray-500 mb-8 text-[15px] leading-relaxed font-medium">{error}</p>
-          <div className="flex gap-4 justify-center">
+      <div className="flex flex-col items-center justify-center min-h-screen text-center p-8 bg-[#1a1c1a]">
+        <div className="bg-[#2B2B2D] border border-red-500/30 p-8 rounded-3xl max-w-lg">
+          <h2 className="text-xl font-medium text-red-400 mb-4">Error Extracting DNA</h2>
+          <p className="text-[#EAEAEA] mb-6 text-sm leading-relaxed">{error}</p>
+          <div className="flex gap-3 justify-center">
             <button 
               onClick={() => { setError(null); window.location.reload(); }}
-              className="bg-lime-400 text-white hover:bg-lime-500 px-8 py-3 rounded-full font-bold transition-all shadow-md active:scale-95"
+              className="bg-[#C4CE83] text-[#1A1B1A] hover:bg-[#D5DF93] px-6 py-2.5 rounded-full font-medium transition-colors"
             >
               Retry
             </button>
             <button 
               onClick={() => router.push("/")}
-              className="bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-900 px-8 py-3 rounded-full font-bold transition-all border border-gray-100 active:scale-95"
+              className="bg-[#242426] text-[#EAEAEA] hover:bg-[#313328] px-6 py-2.5 rounded-full font-medium transition-colors border border-white/5"
             >
               Go Back
             </button>
@@ -97,52 +96,47 @@ function GenerateContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center relative overflow-hidden font-sans">
+    <div className="min-h-screen bg-[#1a1c1a] flex flex-col items-center justify-center relative">
       
       {/* Background glow behind modal */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[80%] w-[600px] h-[400px] bg-lime-200/20 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[80%] w-[400px] h-[300px] bg-[#C4CE83]/20 blur-[100px] rounded-full pointer-events-none" />
 
       {/* Main Loading Card */}
-      <div className="bg-white border border-gray-100 rounded-[3rem] p-16 flex flex-col items-center w-[550px] relative z-10 shadow-2xl shadow-lime-900/5">
+      <div className="bg-[#2B2B2D] border border-white/5 rounded-[3rem] p-12 flex flex-col items-center w-[500px] relative z-10 shadow-2xl">
         
-        <div className="w-20 h-20 bg-lime-50 rounded-3xl flex items-center justify-center mb-8 shadow-inner border border-lime-100">
-          <Sparkles className="w-10 h-10 text-lime-600 animate-pulse" />
-        </div>
-
-        <h1 className="text-3xl font-bold text-center text-gray-900 leading-tight mb-4 tracking-tight">
-          Generating your <br /> Business DNA
+        <h1 className="text-3xl font-serif italic text-center text-[#EAEAEA] leading-tight mb-4 tracking-tight">
+          Generating your Business <br /> DNA
         </h1>
         
-        <p className="text-[14px] text-gray-500 text-center mb-10 px-6 leading-relaxed font-bold">
-          We&apos;re researching and analyzing your business online.<br />
-          This process takes a few minutes.
+        <p className="text-[13px] text-[#9A9A9C] text-center mb-8 px-4 leading-relaxed">
+          We&apos;re researching and analyzing your business.<br />
+          It will take several minutes. Feel free to come back later.
         </p>
 
         {/* Dynamic Status Pill */}
-        <div className="bg-lime-400 text-white px-6 py-3 rounded-full flex items-center gap-3 mb-10 shadow-lg shadow-lime-100 animate-in fade-in duration-500">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          <span className="text-[13px] font-extrabold uppercase tracking-widest">{LOADING_STATUSES[statusIndex]}...</span>
+        <div className="bg-[#A7D7C5] text-[#1A1B1A] px-5 py-2.5 rounded-full flex items-center gap-2 mb-10 shadow-inner animate-pulse duration-1000">
+          <Sparkles className="w-4 h-4" />
+          <span className="text-sm font-semibold">{LOADING_STATUSES[statusIndex]}...</span>
         </div>
 
         {/* Website Preview iframe */}
-        <div className="w-full aspect-video bg-gray-50 rounded-[24px] overflow-hidden border border-gray-100 shadow-inner mb-10 relative">
+        <div className="w-full aspect-video bg-[#1A1B1A] rounded-2xl overflow-hidden border border-white/5 shadow-inner mb-8 relative group">
           <div className="absolute inset-0 flex items-center justify-center z-0">
-            <Loader2 className="w-6 h-6 text-gray-200 animate-spin" />
+            <Loader2 className="w-6 h-6 text-[#444a44] animate-spin" />
           </div>
           <iframe 
             src={url || ""} 
-            className="absolute inset-0 w-full h-full object-cover z-10 bg-white opacity-40grayscale shadow-2xl"
+            className="absolute inset-0 w-full h-full object-cover z-10 bg-white"
             sandbox="allow-scripts allow-same-origin"
             loading="lazy"
             title="Website Preview"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent z-20" />
         </div>
 
         {/* URL Pill */}
-        <div className="bg-gray-50 border border-gray-100 text-gray-400 px-6 py-3 rounded-full flex items-center gap-2.5 shadow-inner w-full justify-center">
-          <LinkIcon className="w-4 h-4 text-lime-500" />
-          <span className="text-[12px] font-bold font-mono truncate max-w-[300px]">{url}</span>
+        <div className="bg-[#1A1B1A] border border-white/5 text-[#C4CE83] px-5 py-2.5 rounded-full flex items-center gap-2 shadow-inner">
+          <LinkIcon className="w-4 h-4" />
+          <span className="text-sm font-mono truncate max-w-[250px]">{url}</span>
         </div>
 
       </div>
@@ -153,7 +147,7 @@ function GenerateContent() {
 
 export default function GeneratePage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-50" />}>
+    <Suspense fallback={<div className="min-h-screen bg-[#1a1c1a]" />}>
       <GenerateContent />
     </Suspense>
   );

@@ -1,8 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { getChannels } from "@/lib/postiz-client";
-import type { Channel } from "@/lib/postiz-types";
+import { useState } from "react";
 
 export type PlatformCategory = "social" | "blog" | "email" | "ads" | "other" | "automation";
 
@@ -33,7 +31,7 @@ export const ALL_PLATFORMS: Platform[] = [
     gradientTo: "#DD2A7B",
     maxChars: 2200,
     connected: true,
-    username: "@scalesoci.ai",
+    username: "@growloop.ai",
     category: "social",
   },
   {
@@ -44,7 +42,7 @@ export const ALL_PLATFORMS: Platform[] = [
     color: "#1877F2",
     maxChars: 63206,
     connected: true,
-    username: "ScaleSoci AI",
+    username: "Growloop AI",
     category: "social",
   },
   {
@@ -55,7 +53,7 @@ export const ALL_PLATFORMS: Platform[] = [
     color: "#000000",
     maxChars: 280,
     connected: true,
-    username: "@scalesoci",
+    username: "@growloop",
     category: "social",
   },
   {
@@ -66,7 +64,7 @@ export const ALL_PLATFORMS: Platform[] = [
     color: "#0A66C2",
     maxChars: 3000,
     connected: true,
-    username: "ScaleSoci AI",
+    username: "Growloop AI",
     category: "social",
   },
   {
@@ -195,61 +193,9 @@ export default function PlatformSelector({
   showCategories = false,
   filterCategories,
 }: PlatformSelectorProps) {
-  const [fetchedPlatforms, setFetchedPlatforms] = useState<Platform[]>(ALL_PLATFORMS);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    async function fetchPlatforms() {
-      try {
-        const channels = await getChannels();
-        
-        // Map fetched channels to the Platform type, merge with existing ones for base info (icon, color)
-        const mappedPlatforms = ALL_PLATFORMS.map((basePlatform) => {
-          // Find matching channel by type (e.g., 'x', 'linkedin')
-          const channel = channels.find((c) => c.type === basePlatform.type);
-          
-          if (channel) {
-            return {
-              ...basePlatform,
-              id: channel.id, // Use real Postiz channel ID
-              name: channel.name,
-              connected: !channel.disabled,
-              username: channel.profile || channel.name, // Use 'profile' from Channel
-            };
-          }
-          return basePlatform;
-        });
-        
-        // Ensure all active channels are shown even if not in ALL_PLATFORMS initially
-        channels.forEach(channel => {
-            if (!mappedPlatforms.some(p => p.id === channel.id)) {
-                 const base = ALL_PLATFORMS.find(p => p.type === channel.type);
-                 if (base) {
-                     mappedPlatforms.push({
-                         ...base,
-                         id: channel.id,
-                         name: channel.name,
-                         connected: !channel.disabled,
-                         username: channel.profile || channel.name // Use 'profile' from Channel
-                     });
-                 }
-            }
-        });
-
-        setFetchedPlatforms(mappedPlatforms);
-      } catch (error) {
-        console.error("Failed to fetch channels:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    fetchPlatforms();
-  }, []);
-
   const platforms = filterCategories
-    ? fetchedPlatforms.filter((p) => filterCategories.includes(p.category))
-    : fetchedPlatforms;
+    ? ALL_PLATFORMS.filter((p) => filterCategories.includes(p.category))
+    : ALL_PLATFORMS;
 
   const togglePlatform = (id: string) => {
     const platform = platforms.find((p) => p.id === id);
@@ -272,48 +218,48 @@ export default function PlatformSelector({
         onClick={() => togglePlatform(platform.id)}
         disabled={!isConnected}
         className={`
-          relative flex items-center gap-3 px-4 py-3 rounded-2xl border-2 transition-all duration-300 group
+          relative flex items-center gap-3 px-4 py-3 rounded-2xl border-2 transition-all duration-200 group
           ${
             isSelected
-              ? "border-lime-400 bg-lime-50 text-gray-900 shadow-md shadow-lime-100"
+              ? "border-[#C1CD7D] bg-[#C1CD7D]/10 text-[#EAEAEA] shadow-lg shadow-[#C1CD7D]/10"
               : isConnected
-              ? "border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:text-gray-900 shadow-sm"
-              : "border-gray-100 bg-gray-50 text-gray-300 cursor-not-allowed opacity-60"
+              ? "border-white/10 bg-[#2C2D2E] text-[#9A9A9C] hover:border-white/20 hover:bg-[#363738] hover:text-[#EAEAEA]"
+              : "border-white/5 bg-[#2C2D2E]/50 text-[#525355] cursor-not-allowed opacity-60"
           }
         `}
       >
         <div
-          className={`w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-[14px] shrink-0 transition-transform shadow-sm ${
+          className={`w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-[14px] shrink-0 transition-transform ${
             isSelected ? "scale-110" : "group-hover:scale-105"
           }`}
           style={
             platform.gradientFrom
               ? { background: `linear-gradient(135deg, ${platform.gradientFrom}, ${platform.gradientTo || platform.color})` }
-              : { backgroundColor: isConnected ? platform.color : "#cbd5e1" }
+              : { backgroundColor: isConnected ? platform.color : "#363738" }
           }
         >
           {platform.icon}
         </div>
 
         <div className="flex flex-col items-start">
-          <span className="text-[13px] font-bold leading-tight">
+          <span className="text-[13px] font-semibold leading-tight">
             {platform.name}
           </span>
-          <span className="text-[11px] text-gray-400 font-bold uppercase tracking-tight">
+          <span className="text-[11px] text-[#9A9A9C] font-medium">
             {isConnected ? platform.username || "Connected" : "Not connected"}
           </span>
         </div>
 
         {isSelected && (
-          <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-lime-500 rounded-full flex items-center justify-center shadow-md border border-white">
-            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+          <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#C1CD7D] rounded-full flex items-center justify-center shadow-md">
+            <svg className="w-3 h-3 text-[#1B1B1B]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
         )}
 
         {!isConnected && (
-          <span className="text-[10px] bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full font-bold uppercase">
+          <span className="text-[10px] bg-[#363738] text-[#9A9A9C] px-2 py-0.5 rounded-full font-medium">
             Connect
           </span>
         )}
@@ -342,20 +288,6 @@ export default function PlatformSelector({
             </div>
           </div>
         ))}
-      </div>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col gap-3">
-        <label className="text-[13px] font-semibold text-[#9A9A9C] uppercase tracking-wider">
-          Publish to
-        </label>
-        <div className="flex items-center gap-3 h-14">
-           <div className="w-5 h-5 border-2 border-[#C1CD7D] border-t-transparent rounded-full animate-spin" />
-           <span className="text-[13px] text-[#9A9A9C]">Loading channels...</span>
-        </div>
       </div>
     );
   }

@@ -32,30 +32,30 @@ export default function BusinessNameModal({ initialName, onApply, onClose }: Bus
       onClick={handleClose}
     >
       <div 
-        className={`bg-white border border-gray-200 rounded-[32px] p-8 w-full max-w-[480px] shadow-xl relative transition-all duration-200 ${
+        className={`bg-[#363738] border border-white/5 rounded-3xl p-6 w-full max-w-[480px] shadow-2xl relative transition-all duration-200 ${
           isVisible ? "scale-100 translate-y-0" : "scale-95 translate-y-4"
         }`}
         onClick={(e) => e.stopPropagation()}
       >
         <button 
           onClick={handleClose} 
-          className="absolute top-6 right-6 w-8 h-8 flex items-center justify-center rounded-full bg-gray-50 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors shadow-sm"
+          className="absolute top-5 right-5 w-7 h-7 flex items-center justify-center rounded-full bg-[#414244] text-[#EAEAEA] hover:bg-[#4A4B4D] transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
 
-        <h3 className="text-xl font-bold text-gray-900 mb-1">Business Name</h3>
-        <p className="text-[14px] text-gray-500 mb-8 font-medium">Edit your business name</p>
+        <h3 className="text-xl font-medium text-[#EAEAEA] mb-1">Business Name</h3>
+        <p className="text-[14px] text-[#9A9A9C] mb-8">Edit your business name</p>
 
         <div className="relative mb-8">
-          <label className="absolute -top-2 left-3 bg-white px-1 text-[11px] font-bold text-gray-400 z-10">
+          <label className="absolute -top-2 left-3 bg-[#363738] px-1 text-[11px] font-medium text-[#9A9A9C] z-10">
             Business Name*
           </label>
           <input 
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3.5 text-gray-900 text-[15px] outline-none focus:border-lime-500 transition-colors font-semibold"
+            className="w-full bg-transparent border border-[#525355] rounded-xl px-4 py-3.5 text-[#EAEAEA] text-[15px] outline-none focus:border-[#C1CD7D] transition-colors"
             autoFocus
           />
         </div>
@@ -64,10 +64,10 @@ export default function BusinessNameModal({ initialName, onApply, onClose }: Bus
           <button 
             onClick={() => hasChanges && name.trim() && onApply(name)}
             disabled={!hasChanges || !name.trim()}
-            className={`px-8 py-2.5 rounded-full font-bold text-[13px] transition-all shadow-sm active:scale-95 ${
+            className={`px-6 py-2.5 rounded-full font-medium text-[13px] transition-colors ${
               hasChanges && name.trim()
-                ? "bg-lime-400 text-white hover:bg-lime-500"
-                : "bg-gray-100 text-gray-300 cursor-not-allowed"
+                ? "bg-[#414244] text-[#EAEAEA] hover:bg-[#4A4B4D]" // In hover state it was actually a dark button in the screenshot
+                : "bg-[#414244] text-[#9A9A9C] opacity-60 cursor-not-allowed"
             }`}
           >
             Apply

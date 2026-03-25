@@ -23,10 +23,10 @@ interface PendingPost {
 }
 
 const MEMBERS: Member[] = [
-  { id: "1", name: "You", email: "you@scalesoci.ai", role: "Admin", avatar: "🧑‍💻", lastActive: "Just now" },
-  { id: "2", name: "Sarah Chen", email: "sarah@scalesoci.ai", role: "Editor", avatar: "👩‍🎨", lastActive: "2h ago" },
-  { id: "3", name: "Mike Johnson", email: "mike@scalesoci.ai", role: "Editor", avatar: "👨‍💼", lastActive: "1d ago" },
-  { id: "4", name: "Lisa Park", email: "lisa@scalesoci.ai", role: "Viewer", avatar: "👩‍🔬", lastActive: "3d ago" },
+  { id: "1", name: "You", email: "you@growloop.ai", role: "Admin", avatar: "🧑‍💻", lastActive: "Just now" },
+  { id: "2", name: "Sarah Chen", email: "sarah@growloop.ai", role: "Editor", avatar: "👩‍🎨", lastActive: "2h ago" },
+  { id: "3", name: "Mike Johnson", email: "mike@growloop.ai", role: "Editor", avatar: "👨‍💼", lastActive: "1d ago" },
+  { id: "4", name: "Lisa Park", email: "lisa@growloop.ai", role: "Viewer", avatar: "👩‍🔬", lastActive: "3d ago" },
 ];
 
 const PENDING_POSTS: PendingPost[] = [
@@ -55,45 +55,45 @@ export default function TeamPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
+    <div className="min-h-screen bg-[#1B1B1B] text-[#EAEAEA]">
       {/* Top Bar */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white sticky top-0 z-20">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
         <div className="flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2 text-gray-400 hover:text-gray-900 transition-colors text-[14px] font-bold uppercase tracking-wider">
+          <Link href="/" className="flex items-center gap-2 text-[#9A9A9C] hover:text-[#EAEAEA] transition-colors text-[14px] font-medium">
             <ArrowLeft className="w-4 h-4" />
             Back
           </Link>
-          <div className="w-px h-6 bg-gray-200" />
-          <h1 className="text-[20px] font-bold tracking-tight">Team Management</h1>
+          <div className="w-px h-6 bg-white/10" />
+          <h1 className="text-[20px] font-medium">Team</h1>
         </div>
         <button
           onClick={() => setShowInvite(!showInvite)}
-          className="flex items-center gap-2 bg-lime-400 text-white px-6 py-2.5 rounded-full font-bold text-[13px] hover:bg-lime-500 transition-all shadow-md active:scale-95"
+          className="flex items-center gap-2 bg-[#C1CD7D] text-[#1B1B1B] px-5 py-2.5 rounded-full font-semibold text-[13px] hover:bg-[#D4E08F] transition-colors shadow-lg"
         >
           <UserPlus className="w-4 h-4" />
           Invite Member
         </button>
       </div>
 
-      <div className="max-w-4xl mx-auto px-6 py-12 flex flex-col gap-10">
+      <div className="max-w-4xl mx-auto px-6 py-8 flex flex-col gap-8">
         {/* Invite Section */}
         {showInvite && (
-          <div className="bg-white border border-lime-200 rounded-[24px] p-8 animate-in slide-in-from-top-4 duration-300 shadow-xl shadow-lime-50/50">
-            <h3 className="text-[18px] font-bold mb-6 text-gray-900">Invite a team member</h3>
-            <div className="flex gap-4">
+          <div className="bg-[#2C2D2E] border border-[#C1CD7D]/30 rounded-2xl p-6 animate-in slide-in-from-top-4 duration-300">
+            <h3 className="text-[15px] font-medium mb-4">Invite a team member</h3>
+            <div className="flex gap-3">
               <input
                 type="email"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 placeholder="email@company.com"
-                className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-5 py-3.5 text-gray-900 text-[14px] outline-none focus:border-lime-500 font-bold placeholder-gray-400 shadow-inner"
+                className="flex-1 bg-[#1B1B1B] border border-transparent rounded-xl px-4 py-3 text-[#EAEAEA] text-[14px] outline-none focus:border-[#4A4B4D] font-medium placeholder-[#525355]"
               />
-              <select className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3.5 text-gray-900 text-[14px] outline-none font-bold shadow-inner cursor-pointer">
+              <select className="bg-[#1B1B1B] border border-transparent rounded-xl px-4 py-3 text-[#EAEAEA] text-[14px] outline-none font-medium">
                 <option>Editor</option>
                 <option>Viewer</option>
                 <option>Admin</option>
               </select>
-              <button className="bg-lime-400 text-white px-8 py-3.5 rounded-xl font-bold text-[14px] hover:bg-lime-500 transition-all shadow-md active:scale-95">
+              <button className="bg-[#C1CD7D] text-[#1B1B1B] px-6 py-3 rounded-xl font-semibold text-[14px] hover:bg-[#D4E08F] transition-colors">
                 Send Invite
               </button>
             </div>
@@ -102,43 +102,43 @@ export default function TeamPage() {
 
         {/* Team Members */}
         <div>
-          <h3 className="text-[13px] font-bold text-gray-400 uppercase tracking-widest mb-6">
+          <h3 className="text-[15px] font-medium text-[#EAEAEA] mb-4">
             Members ({members.length})
           </h3>
-          <div className="flex flex-col gap-3.5">
+          <div className="flex flex-col gap-3">
             {members.map((member) => {
               const RoleIcon = ROLE_ICONS[member.role] || Shield;
               return (
                 <div
                   key={member.id}
-                  className="bg-white border border-gray-200 rounded-[20px] p-6 flex items-center gap-5 hover:border-lime-300 transition-all shadow-sm group hover:shadow-md"
+                  className="bg-[#2C2D2E] border border-white/5 rounded-2xl p-5 flex items-center gap-4 hover:border-white/10 transition-colors"
                 >
-                  <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center text-[24px] shadow-inner border border-gray-100">
+                  <div className="w-11 h-11 rounded-full bg-[#363738] flex items-center justify-center text-[20px]">
                     {member.avatar}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3">
-                      <span className="text-[16px] font-bold text-gray-900">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[14px] font-medium text-[#EAEAEA]">
                         {member.name}
                       </span>
-                      <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-3 py-0.5 rounded-full uppercase tracking-wider ${
+                      <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${
                         member.role === "Admin"
-                          ? "bg-lime-50 text-lime-600 border border-lime-100"
+                          ? "bg-[#C1CD7D]/15 text-[#C1CD7D]"
                           : member.role === "Editor"
-                          ? "bg-blue-50 text-blue-600 border border-blue-100"
-                          : "bg-gray-50 text-gray-400 border border-gray-100"
+                          ? "bg-blue-400/15 text-blue-400"
+                          : "bg-white/5 text-[#9A9A9C]"
                       }`}>
                         <RoleIcon className="w-3 h-3" />
                         {member.role}
                       </span>
                     </div>
-                    <span className="text-[13px] text-gray-400 font-bold mt-1 block tracking-tight">{member.email}</span>
+                    <span className="text-[12px] text-[#9A9A9C]">{member.email}</span>
                   </div>
-                  <span className="text-[12px] text-gray-300 font-bold uppercase tracking-widest">
+                  <span className="text-[12px] text-[#525355] font-medium">
                     {member.lastActive}
                   </span>
-                  <button className="p-2.5 rounded-xl hover:bg-gray-50 text-gray-400 hover:text-gray-900 transition-all group-hover:scale-110">
-                    <MoreHorizontal className="w-5 h-5" />
+                  <button className="p-2 rounded-lg hover:bg-white/5 text-[#9A9A9C]">
+                    <MoreHorizontal className="w-4 h-4" />
                   </button>
                 </div>
               );
@@ -148,61 +148,61 @@ export default function TeamPage() {
 
         {/* Approval Queue */}
         <div>
-          <h3 className="text-[13px] font-bold text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-lime-500" />
+          <h3 className="text-[15px] font-medium text-[#EAEAEA] mb-4 flex items-center gap-2">
+            <Clock className="w-4 h-4 text-[#C1CD7D]" />
             Pending Approvals ({pendingPosts.filter(p => p.status === "pending").length})
           </h3>
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             {pendingPosts.map((post) => (
               <div
                 key={post.id}
-                className={`bg-white border rounded-[24px] p-8 transition-all shadow-sm ${
+                className={`bg-[#2C2D2E] border rounded-2xl p-5 transition-all ${
                   post.status === "approved"
-                    ? "border-green-200 opacity-60 bg-green-50/10"
+                    ? "border-green-500/30 opacity-70"
                     : post.status === "rejected"
-                    ? "border-red-200 opacity-60 bg-red-50/10"
-                    : "border-gray-200"
+                    ? "border-red-500/30 opacity-70"
+                    : "border-white/5"
                 }`}
               >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[16px] font-bold text-gray-900">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <span className="text-[13px] font-medium text-[#EAEAEA]">
                       {post.author}
                     </span>
-                    <span className="text-[12px] text-gray-400 font-bold uppercase tracking-wider">
-                      {post.submittedAt} · {post.platform}
+                    <span className="text-[12px] text-[#9A9A9C] ml-2">
+                      · {post.submittedAt} · {post.platform}
                     </span>
                   </div>
                   {post.status !== "pending" && (
-                    <span className={`text-[11px] font-bold px-4 py-1 rounded-full uppercase tracking-widest border ${
+                    <span className={`text-[11px] font-semibold px-3 py-1 rounded-full ${
                       post.status === "approved"
-                        ? "bg-green-50 text-green-600 border-green-100"
-                        : "bg-red-50 text-red-600 border-red-100"
+                        ? "bg-green-400/15 text-green-400"
+                        : "bg-red-400/15 text-red-400"
                     }`}>
                       {post.status === "approved" ? "✓ Approved" : "✗ Rejected"}
                     </span>
                   )}
                 </div>
-                <p className="text-[15px] text-gray-500 mb-6 font-bold leading-relaxed">
+                <p className="text-[14px] text-[#9A9A9C] mb-4 font-medium">
                   {post.content}
                 </p>
                 {post.status === "pending" && (
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => handleApprove(post.id)}
-                      className="flex items-center gap-2 bg-green-50 text-green-600 border border-green-100 px-6 py-2.5 rounded-xl text-[13px] font-bold hover:bg-green-100 transition-all shadow-sm active:scale-95"
+                      className="flex items-center gap-1.5 bg-green-500/15 text-green-400 px-4 py-2 rounded-xl text-[13px] font-semibold hover:bg-green-500/25 transition-colors"
                     >
                       <CheckCircle className="w-4 h-4" />
                       Approve
                     </button>
                     <button
                       onClick={() => handleReject(post.id)}
-                      className="flex items-center gap-2 bg-red-50 text-red-600 border border-red-100 px-6 py-2.5 rounded-xl text-[13px] font-bold hover:bg-red-100 transition-all shadow-sm active:scale-95"
+                      className="flex items-center gap-1.5 bg-red-500/15 text-red-400 px-4 py-2 rounded-xl text-[13px] font-semibold hover:bg-red-500/25 transition-colors"
                     >
                       <XCircle className="w-4 h-4" />
                       Reject
                     </button>
-                    <button className="flex items-center gap-2 text-gray-400 hover:text-gray-900 px-4 py-2.5 rounded-xl text-[13px] font-bold hover:bg-gray-50 transition-all uppercase tracking-wider">
+                    <button className="flex items-center gap-1.5 text-[#9A9A9C] hover:text-[#EAEAEA] px-3 py-2 rounded-xl text-[13px] font-medium hover:bg-white/5 transition-colors">
                       <MessageCircle className="w-4 h-4" />
                       Comment
                     </button>

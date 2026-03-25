@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f9fafb;
-  --foreground: #111827;
+  --background: #ffffff;
+  --foreground: #171717;
 }
 
 @theme inline {
@@ -12,13 +12,12 @@
   --font-mono: var(--font-geist-mono);
 }
 
-/* Force light theme for now */
-/* @media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
   }
-} */
+}
 
 body {
   background: var(--background);
@@ -34,10 +33,10 @@ body {
   background: transparent;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #e5e7eb;
+  background: #3a3a3c;
   border-radius: 3px;
 }
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #d1d5db;
+  background: #555;
 }
 

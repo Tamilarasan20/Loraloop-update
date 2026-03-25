@@ -104,48 +104,48 @@ export default function CalendarView({ posts = MOCK_POSTS, onDayClick, onPostCli
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <h2 className="text-[26px] font-bold text-gray-900 tracking-tight">
+          <h2 className="text-[24px] font-medium text-[#EAEAEA]">
             {MONTHS[month]} {year}
           </h2>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <button
               onClick={() => navigate(-1)}
-              className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-900 transition-all border border-transparent hover:border-gray-200 shadow-sm active:scale-90"
+              className="p-2 rounded-xl hover:bg-white/5 text-[#9A9A9C] hover:text-[#EAEAEA] transition-colors"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
             <button
               onClick={() => setCurrentDate(new Date())}
-              className="px-4 py-2 rounded-xl text-[13px] font-bold text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-all border border-transparent hover:border-gray-200 uppercase tracking-wider"
+              className="px-4 py-1.5 rounded-xl text-[13px] font-medium text-[#9A9A9C] hover:text-[#EAEAEA] hover:bg-white/5 transition-colors"
             >
               Today
             </button>
             <button
               onClick={() => navigate(1)}
-              className="p-2 rounded-xl hover:bg-gray-100 text-gray-400 hover:text-gray-900 transition-all border border-transparent hover:border-gray-200 shadow-sm active:scale-90"
+              className="p-2 rounded-xl hover:bg-white/5 text-[#9A9A9C] hover:text-[#EAEAEA] transition-colors"
             >
               <ChevronRight className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1 border border-gray-200/50">
+        <div className="flex items-center gap-2 bg-[#2C2D2E] rounded-xl p-1 border border-white/5">
           <button
             onClick={() => setViewMode("month")}
-            className={`px-5 py-2 rounded-[10px] text-[13px] font-bold transition-all ${
+            className={`px-4 py-2 rounded-lg text-[13px] font-medium transition-colors ${
               viewMode === "month"
-                ? "bg-white text-gray-900 shadow-md"
-                : "text-gray-500 hover:text-gray-900"
+                ? "bg-[#363738] text-[#EAEAEA] shadow-sm"
+                : "text-[#9A9A9C] hover:text-[#EAEAEA]"
             }`}
           >
             Month
           </button>
           <button
             onClick={() => setViewMode("week")}
-            className={`px-5 py-2 rounded-[10px] text-[13px] font-bold transition-all ${
+            className={`px-4 py-2 rounded-lg text-[13px] font-medium transition-colors ${
               viewMode === "week"
-                ? "bg-white text-gray-900 shadow-md"
-                : "text-gray-500 hover:text-gray-900"
+                ? "bg-[#363738] text-[#EAEAEA] shadow-sm"
+                : "text-[#9A9A9C] hover:text-[#EAEAEA]"
             }`}
           >
             Week
@@ -154,13 +154,13 @@ export default function CalendarView({ posts = MOCK_POSTS, onDayClick, onPostCli
       </div>
 
       {/* Calendar Grid */}
-      <div className="bg-white border border-gray-200 rounded-[32px] overflow-hidden shadow-sm">
+      <div className="bg-[#2C2D2E] border border-white/5 rounded-[24px] overflow-hidden shadow-xl">
         {/* Day Headers */}
-        <div className="grid grid-cols-7 border-b border-gray-100 bg-gray-50/50">
+        <div className="grid grid-cols-7 border-b border-white/5">
           {DAYS.map((day) => (
             <div
               key={day}
-              className="px-4 py-4 text-center text-[12px] font-bold text-gray-400 uppercase tracking-widest"
+              className="px-4 py-3 text-center text-[12px] font-semibold text-[#9A9A9C] uppercase tracking-wider"
             >
               {day}
             </div>
@@ -176,20 +176,20 @@ export default function CalendarView({ posts = MOCK_POSTS, onDayClick, onPostCli
                 key={i}
                 onClick={() => onDayClick?.(day.date)}
                 className={`
-                  min-h-[130px] p-3 border-b border-r border-gray-50 cursor-pointer 
-                  transition-all hover:bg-gray-50/50 group relative
-                  ${!day.isCurrentMonth ? "opacity-20 pointer-events-none" : ""}
+                  min-h-[120px] p-2 border-b border-r border-white/5 cursor-pointer 
+                  transition-colors hover:bg-white/[0.02] group relative
+                  ${!day.isCurrentMonth ? "opacity-30" : ""}
                 `}
               >
                 {/* Day Number */}
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-1.5">
                   <span
                     className={`
-                      w-8 h-8 flex items-center justify-center rounded-xl text-[14px] font-bold transition-all
+                      w-7 h-7 flex items-center justify-center rounded-full text-[13px] font-medium
                       ${
                         day.isToday
-                          ? "bg-lime-400 text-white shadow-md shadow-lime-100 scale-110"
-                          : "text-gray-400"
+                          ? "bg-[#C1CD7D] text-[#1B1B1B] font-bold"
+                          : "text-[#9A9A9C]"
                       }
                     `}
                   >
@@ -197,13 +197,13 @@ export default function CalendarView({ posts = MOCK_POSTS, onDayClick, onPostCli
                   </span>
 
                   {/* Add post button (visible on hover) */}
-                  <button className="w-7 h-7 rounded-xl bg-gray-100 flex items-center justify-center text-gray-400 opacity-0 group-hover:opacity-100 transition-all hover:bg-lime-50 hover:text-lime-600 shadow-sm">
-                    <Plus className="w-4 h-4" />
+                  <button className="w-6 h-6 rounded-lg bg-white/5 flex items-center justify-center text-[#9A9A9C] opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white/10">
+                    <Plus className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
                 {/* Post Pills */}
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-1">
                   {dayPosts.slice(0, 3).map((post) => (
                     <button
                       key={post.id}
@@ -211,19 +211,19 @@ export default function CalendarView({ posts = MOCK_POSTS, onDayClick, onPostCli
                         e.stopPropagation();
                         onPostClick?.(post);
                       }}
-                      className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-left transition-all hover:bg-white hover:shadow-md border border-transparent hover:border-gray-100 w-full group/pill bg-gray-50"
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-left transition-colors hover:bg-white/10 w-full group/pill"
                     >
                       <div
-                        className="w-2 h-2 rounded-full shrink-0 shadow-sm"
+                        className="w-2 h-2 rounded-full shrink-0"
                         style={{ backgroundColor: post.platformColor }}
                       />
-                      <span className="text-[11px] text-gray-500 truncate group-hover/pill:text-gray-900 font-bold">
+                      <span className="text-[11px] text-[#9A9A9C] truncate group-hover/pill:text-[#EAEAEA] font-medium">
                         {post.content.slice(0, 30)}
                       </span>
                     </button>
                   ))}
                   {dayPosts.length > 3 && (
-                    <span className="text-[10px] text-gray-400 pl-2 font-bold uppercase tracking-wider">
+                    <span className="text-[10px] text-[#9A9A9C] pl-2 font-medium">
                       +{dayPosts.length - 3} more
                     </span>
                   )}

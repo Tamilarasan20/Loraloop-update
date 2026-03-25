@@ -36,38 +36,38 @@ export default function LogoModal({ initialLogoUrl, onApply, onClose }: LogoModa
       onClick={handleClose}
     >
       <div 
-        className={`bg-white border border-gray-200 rounded-[32px] p-8 w-full max-w-[560px] shadow-xl relative transition-all duration-200 ${
+        className={`bg-[#2C2D2E] border border-white/5 rounded-[32px] p-8 w-full max-w-[560px] shadow-2xl relative transition-all duration-200 ${
           isVisible ? "scale-100 translate-y-0" : "scale-95 translate-y-4"
         }`}
         onClick={(e) => e.stopPropagation()}
       >
         <button 
           onClick={handleClose} 
-          className="absolute top-6 right-6 w-8 h-8 flex items-center justify-center rounded-full bg-gray-50 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors shadow-sm"
+          className="absolute top-6 right-6 w-8 h-8 flex items-center justify-center rounded-full bg-[#414244] text-[#EAEAEA] hover:bg-[#4A4B4D] transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
 
-        <h3 className="text-2xl font-bold text-gray-900 mb-6">Logo</h3>
+        <h3 className="text-2xl font-medium text-[#EAEAEA] mb-6">Logo</h3>
 
         {/* Tabs */}
-        <div className="flex gap-6 border-b border-gray-100 mb-8">
+        <div className="flex gap-6 border-b border-white/10 mb-8">
           <button 
             onClick={() => setActiveTab("images")}
-            className={`pb-3 text-[14px] font-bold transition-colors border-b-2 ${
+            className={`pb-3 text-[14px] font-medium transition-colors border-b-2 ${
               activeTab === "images" 
-                ? "border-lime-500 text-gray-900" 
-                : "border-transparent text-gray-400 hover:text-gray-600"
+                ? "border-[#C1CD7D] text-[#EAEAEA]" 
+                : "border-transparent text-[#9A9A9C] hover:text-[#EAEAEA]"
             }`}
           >
             Your images
           </button>
           <button 
             onClick={() => setActiveTab("generate")}
-            className={`pb-3 text-[14px] font-bold transition-colors border-b-2 ${
+            className={`pb-3 text-[14px] font-medium transition-colors border-b-2 ${
               activeTab === "generate" 
-                ? "border-lime-500 text-gray-900" 
-                : "border-transparent text-gray-400 hover:text-gray-600"
+                ? "border-[#C1CD7D] text-[#EAEAEA]" 
+                : "border-transparent text-[#9A9A9C] hover:text-[#EAEAEA]"
             }`}
           >
             Generate
@@ -79,9 +79,9 @@ export default function LogoModal({ initialLogoUrl, onApply, onClose }: LogoModa
           <div className="min-h-[200px] flex flex-col items-center justify-center gap-4">
              {initialLogoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={initialLogoUrl} alt="Current Logo" className="h-32 object-contain" />
+                <img src={initialLogoUrl} alt="Current Logo" className="h-32 object-contain mix-blend-screen" />
              ) : null}
-             <button className="flex items-center gap-2 bg-gray-50 text-lime-700 border border-gray-100 px-6 py-3 rounded-xl hover:bg-gray-100 transition-all text-[13px] font-bold shadow-sm">
+             <button className="flex items-center gap-2 bg-[#444547] text-[#C1CD7D] px-6 py-3 rounded-xl hover:bg-[#4A4B4D] transition-colors text-[13px] font-medium">
                <Upload className="w-4 h-4" />
                Upload Images
              </button>
@@ -89,26 +89,26 @@ export default function LogoModal({ initialLogoUrl, onApply, onClose }: LogoModa
         ) : (
           <div className="flex flex-col gap-6">
             <div className="flex flex-col gap-2">
-              <label className="text-[13px] text-gray-500 font-bold">Give our AI a subject*</label>
+              <label className="text-[13px] text-[#EAEAEA] font-medium">Give our AI a subject*</label>
               <input 
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="Ex. A futuristic shoe"
-                className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-900 text-[14px] outline-none focus:border-lime-500 transition-colors font-semibold shadow-inner"
+                className="bg-transparent border border-[#525355] rounded-xl px-4 py-3 text-[#EAEAEA] text-[14px] outline-none focus:border-[#C1CD7D] transition-colors"
               />
             </div>
 
             <div className="flex flex-col gap-3">
-              <label className="text-[13px] text-gray-500 font-bold">Choose a style*</label>
+              <label className="text-[13px] text-[#EAEAEA] font-medium">Choose a style*</label>
               <div className="flex flex-wrap gap-2">
                 {STYLES.map(style => (
                   <button 
                     key={style}
                     onClick={() => setSelectedStyle(style)}
-                    className={`px-4 py-2 rounded-full border text-[13px] font-bold transition-all ${
+                    className={`px-4 py-2 rounded-full border text-[13px] font-medium transition-colors ${
                       selectedStyle === style 
-                        ? "border-lime-500 text-lime-700 bg-lime-50 shadow-sm" 
-                        : "border-gray-200 text-gray-500 hover:border-gray-300 bg-white"
+                        ? "border-[#C1CD7D] text-[#C1CD7D] bg-[#C1CD7D]/10" 
+                        : "border-[#525355] text-[#EAEAEA] hover:border-[#9A9A9C] bg-transparent"
                     }`}
                   >
                     {style}
@@ -121,10 +121,10 @@ export default function LogoModal({ initialLogoUrl, onApply, onClose }: LogoModa
               <button 
                 onClick={() => prompt.trim() && onApply("generated_logo_url_here")}
                 disabled={!prompt.trim()}
-                className={`px-8 py-2.5 rounded-full font-bold text-[13px] transition-all shadow-md active:scale-95 ${
+                className={`px-6 py-2.5 rounded-full font-medium text-[13px] transition-colors ${
                   prompt.trim() 
-                    ? "bg-lime-400 text-white hover:bg-lime-500" 
-                    : "bg-gray-100 text-gray-300 cursor-not-allowed shadow-none"
+                    ? "bg-[#C1CD7D] text-[#1B1B1B] hover:opacity-90" 
+                    : "bg-[#444547] text-[#9A9A9C] cursor-not-allowed"
                 }`}
               >
                 Generate

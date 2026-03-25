@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Link as LinkIcon, Upload, Pencil, X, Image as ImageIcon, RotateCcw } from "lucide-react";
+import { Link, Upload, Pencil, X, Image as ImageIcon, Camera, RotateCcw, Dna } from "lucide-react";
 import ColorPickerModal from "./ColorPickerModal";
 import FontPickerModal from "./FontPickerModal";
 import BusinessNameModal from "./BusinessNameModal";
@@ -16,8 +16,9 @@ interface BrandDna {
   colors: {
     primary: string;
     secondary: string;
-    tertiary: string;
-    quaternary: string;
+    background: string;
+    textHighContrast: string;
+    accent: string;
   };
   typography: {
     headingFont: string;
@@ -41,10 +42,10 @@ export default function BrandBoard({ initialDna }: { initialDna: any }) {
   const [isNameModalOpen, setIsNameModalOpen] = useState(false);
   const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
-  const [isLooksGoodConfirmOpen, setIsLooksGoodConfirmOpen] = useState(false);
   const [deleteImageIndex, setDeleteImageIndex] = useState<number | null>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   
+  // Tags Modal State
   const [tagsModalConfig, setTagsModalConfig] = useState<{
     isOpen: boolean;
     field: "brandValue" | "brandAesthetic" | "toneOfVoice" | null;
@@ -54,6 +55,7 @@ export default function BrandBoard({ initialDna }: { initialDna: any }) {
     initialTags: string[];
   }>({ isOpen: false, field: null, title: "", subtitle: "", placeholder: "", initialTags: [] });
 
+  // Fallback for simple text fields
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
 
@@ -79,223 +81,308 @@ export default function BrandBoard({ initialDna }: { initialDna: any }) {
   };
 
   const colors = dna.colors || {
-    primary: "#6366f1",
-    secondary: "#22d3ee",
-    tertiary: "#f59e0b",
-    quaternary: "#ef4444"
+    primary: "#ffffff",
+    secondary: "#aaaaaa",
+    background: "#000000",
+    textHighContrast: "#ffffff",
+    accent: "#cccccc"
   };
 
   return (
-    <div className="w-full h-screen flex flex-col bg-white overflow-hidden relative font-sans">
+    <div className="w-full relative pb-12 pt-16 sm:pt-20 text-[#EAEAEA] flex flex-col items-center">
 
-      {/* ── Title Section (Compact) ── */}
-      <div className="flex flex-col items-center text-center px-6 pt-8 pb-5 w-full shrink-0">
-        <div className="w-9 h-9 text-[#84cc16] mb-3 flex items-center justify-center">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="7 8 12 11 17 8" />
-            <polyline points="7 12 12 15 17 12" />
-            <path d="M12 2L2 7L12 12L22 7L12 2Z" />
-          </svg>
-        </div>
-        <h1 className="text-[28px] font-bold text-[#1e293b] mb-1.5 tracking-tight">
-          Your Brand DNA
-        </h1>
-        <p className="text-[13px] text-slate-400 leading-relaxed font-medium max-w-[520px]">
-          Here is a snapshot of your business that we&apos;ll use to create social media campaigns. Feel free to edit this at anytime.
+      {/* ── Header ── */}
+      <div className="flex flex-col items-center justify-center mb-10 text-center relative z-10 w-full px-4">
+        <Dna className="w-6 h-6 text-[#9A9A9C] mb-3" />
+        <h1 className="text-4xl md:text-[44px] tracking-tight font-serif italic text-[#EAEAEA] mb-3">Your Business DNA</h1>
+        <p className="text-[#9A9A9C] text-[15px] font-medium max-w-[500px] leading-relaxed">
+          Here is a snapshot of your business that we'll use to create social media campaigns.<br/>Feel free to edit this at anytime.
         </p>
       </div>
 
-      {/* ── Centered Elevated Container ── */}
-      <div className="flex-1 w-full flex justify-center overflow-hidden px-[100px] pb-8">
-        <div className="w-full max-w-[1200px] bg-white rounded-[36px] shadow-[0_8px_40px_-12px_rgba(0,0,0,0.1)] border border-gray-100 flex flex-col overflow-hidden">
+      {/* ── Main Board Container ── */}
+      <div className="bg-[#2C2D2E] rounded-[32px] p-6 lg:p-10 w-full max-w-[1040px] shadow-2xl relative mx-4 h-[calc(100vh-200px)] min-h-[600px] flex flex-col">
+        
+        <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 flex-1 min-h-0">
 
-          {/* ── Two-Panel Content (Independent Scroll) ── */}
-          <div className="flex-1 flex flex-col lg:flex-row overflow-hidden gap-8 px-10 pt-8">
+          {/* ═══════ COLUMN 1: Brand Info (Name, Logo, Fonts, Colors, Text Details) ═══════ */}
+          <div className="flex flex-col gap-4 lg:gap-5 flex-1 min-w-0 overflow-y-auto scrollbar-none pb-20 lg:pb-0 pr-2">
 
-            {/* ═══════ LEFT: Brand Info (Scrollable) ═══════ */}
-            <div className="flex flex-col gap-5 w-full lg:w-[42%] xl:w-[40%] overflow-y-auto pr-0 lg:pr-4 scrollbar-none pb-4">
+            {/* Brand Name + URL */}
+            <div 
+              className="w-full bg-[#363738] rounded-2xl p-6 lg:p-8 flex flex-col justify-center min-h-[120px] relative group cursor-pointer hover:ring-1 hover:ring-[#C1CD7D] transition-all shrink-0"
+              onClick={() => setIsNameModalOpen(true)} // Open BusinessNameModal
+            >
+              <div className="text-4xl lg:text-5xl font-medium text-[#EAEAEA] mb-3 truncate w-full pr-10">
+                {dna.brandName || "Unknown Brand"}
+              </div>
+              <div className="flex items-center text-[13px] text-[#9A9A9C] gap-2 font-medium">
+                <Link className="w-4 h-4" />
+                <span>{dna.brandName ? `https://www.${dna.brandName.toLowerCase().replace(/\s+/g, '')}.com/` : "https://pomelli.com/"}</span>
+              </div>
+              <div className="absolute top-5 right-5 bg-[#4A4B4D] rounded-full p-2 text-[#C1CD7D] opacity-0 group-hover:opacity-100 transition-opacity">
+                <Pencil className="w-4 h-4" />
+              </div>
+            </div>
 
-              {/* Brand Name Card */}
+            {/* Logo + Fonts side-by-side */}
+            <div className="grid grid-cols-2 gap-4 lg:gap-5 shrink-0">
+              {/* Logo */}
               <div 
-                className="w-full bg-[#f8f9fa] rounded-3xl p-7 flex flex-col justify-center min-h-[120px] relative group cursor-pointer border border-transparent hover:border-lime-200 transition-all"
-                onClick={() => setIsNameModalOpen(true)}
+                className="bg-[#363738] rounded-2xl p-6 flex flex-col items-center justify-center aspect-[4/3] relative overflow-hidden group cursor-pointer hover:ring-1 hover:ring-[#C1CD7D] transition-all"
+                onClick={() => setIsLogoModalOpen(true)} // Open LogoModal
               >
-                <div className="text-[28px] lg:text-[32px] font-bold text-[#1e293b] mb-2 truncate w-full pr-10 tracking-tight">
-                  {dna.brandName || "Unknown Brand"}
-                </div>
-                <div className="flex items-center text-[13px] text-slate-400 gap-2 font-medium">
-                  <LinkIcon className="w-4 h-4 text-slate-300" />
-                  <span>https://{dna.brandName?.toLowerCase().replace(/\s+/g, '') || "yourbrand"}.com/</span>
-                </div>
-                <div className="absolute top-5 right-5 bg-white shadow-sm border border-gray-100 rounded-full p-2 text-lime-600 opacity-0 group-hover:opacity-100 transition-all">
-                  <Pencil className="w-3.5 h-3.5" />
+                {dna.logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={dna.logoUrl} alt="Logo" className="w-full h-full object-contain mix-blend-screen drop-shadow-md relative z-0" />
+                ) : (
+                  <div className="text-zinc-500 flex flex-col items-center justify-center gap-2 h-full">
+                    <ImageIcon className="w-8 h-8 opacity-50" />
+                    <span className="text-xs font-medium uppercase tracking-widest">No Logo</span>
+                  </div>
+                )}
+                <div className="absolute top-4 right-4 bg-[#4A4B4D] rounded-full p-2 text-[#C1CD7D] opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-md">
+                  <Pencil className="w-4 h-4" />
                 </div>
               </div>
 
-              {/* Logo + Fonts */}
-              <div className="grid grid-cols-2 gap-5 min-h-[160px]">
-                {/* Logo */}
-                <div 
-                  className="bg-[#f8f9fa] border border-transparent rounded-3xl p-6 flex flex-col items-center justify-center relative overflow-hidden group cursor-pointer hover:border-lime-200 transition-all"
-                  onClick={() => setIsLogoModalOpen(true)}
-                >
-                  {dna.logoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={dna.logoUrl} alt="Logo" className="w-full h-full object-contain max-h-[80px] drop-shadow-sm transition-transform group-hover:scale-105" />
-                  ) : (
-                    <div className="text-slate-300 flex flex-col items-center justify-center gap-2 h-full">
-                      <ImageIcon className="w-8 h-8 opacity-40" />
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">No Logo</span>
-                    </div>
-                  )}
-                  <div className="absolute top-4 right-4 bg-white shadow-sm border border-gray-100 rounded-full p-1.5 text-lime-600 opacity-0 group-hover:opacity-100 transition-all z-10">
-                    <Pencil className="w-3.5 h-3.5" />
-                  </div>
-                </div>
-
-                {/* Fonts */}
-                <div 
-                  className="bg-[#f8f9fa] border border-transparent rounded-3xl p-6 flex flex-col relative cursor-pointer hover:border-lime-200 transition-all group items-center justify-center"
-                  onClick={() => setIsFontModalOpen(true)}
-                >
-                  <div className="absolute top-5 left-6 text-[12px] font-bold text-slate-400 uppercase tracking-widest">Fonts</div>
-                  <div className="flex flex-col items-center mt-4">
-                    <div className="text-[52px] lg:text-[60px] text-[#84cc16] font-bold tracking-tighter mb-1 group-hover:scale-105 transition-transform leading-none" style={{ fontFamily: dna.typography?.headingFont }}>Aa</div>
-                    <div className="text-[13px] font-bold text-center text-slate-700 truncate px-2">
-                       {dna.typography?.headingFont || "Gt Walsheim Pro"}
-                    </div>
-                  </div>
-                  <div className="absolute top-4 right-4 bg-white shadow-sm border border-gray-100 rounded-full p-1.5 text-lime-600 opacity-0 group-hover:opacity-100 transition-all z-10">
-                    <Pencil className="w-3.5 h-3.5" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Colors */}
+              {/* Fonts */}
               <div 
-                className="w-full bg-[#f8f9fa] border border-transparent rounded-3xl p-7 flex flex-col cursor-pointer hover:border-lime-200 transition-all group relative min-h-[120px] justify-center"
-                onClick={() => setIsColorModalOpen(true)}
+                className="bg-[#363738] rounded-2xl p-6 flex flex-col aspect-[4/3] relative cursor-pointer hover:ring-1 hover:ring-[#C1CD7D] transition-all group"
+                onClick={() => setIsFontModalOpen(true)}
               >
-                <div className="text-[12px] font-bold text-slate-400 mb-5 uppercase tracking-widest">Colors</div>
-                <div className="flex gap-5 items-center justify-start overflow-x-auto scrollbar-none py-2">
-                  {Object.entries(colors).slice(0, 4).map(([key, value]) => (
-                    <div key={key} className="flex flex-col items-center group/swatch shrink-0">
-                      <div 
-                        className="w-[52px] h-[52px] rounded-full shadow-sm border-4 border-white group-hover/swatch:scale-110 transition-transform cursor-pointer"
-                        style={{ backgroundColor: value as string }}
-                      />
+                <div className="text-[15px] font-medium text-[#EAEAEA]">Fonts</div>
+                <div className="flex-1 flex gap-4 items-center justify-center relative -mt-2 pr-2">
+                  <div className="flex flex-col items-center w-1/2">
+                    <div className="text-4xl lg:text-5xl text-[#C1CD7D] tracking-tight group-hover:scale-105 transition-transform" style={{ fontFamily: dna.typography?.headingFont }}>Aa</div>
+                    <div className="text-[11px] font-medium text-center text-[#9A9A9C] w-full mt-3 truncate">
+                       {dna.typography?.headingFont || "Nike Futura Nd"}
                     </div>
-                  ))}
-                </div>
-                <div className="absolute top-5 right-5 bg-white shadow-sm border border-gray-100 rounded-full p-1.5 text-lime-600 opacity-0 group-hover:opacity-100 transition-all">
-                  <Pencil className="w-3.5 h-3.5" />
-                </div>
-              </div>
-
-              {/* Tagline & Values */}
-              <div className="grid grid-cols-2 gap-5 shrink-0">
-                <div 
-                  className="bg-[#f8f9fa] border border-transparent rounded-3xl p-6 flex flex-col relative group cursor-pointer hover:border-lime-200 transition-all min-h-[120px]"
-                  onClick={() => openEditor("tagline", dna.tagline || "")}
-                >
-                  <div className="text-[12px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Tagline</div>
-                  <div className={`text-lg font-serif italic leading-snug w-full pr-6 ${dna.tagline ? "text-lime-700" : "text-slate-300"}`}>
-                    {dna.tagline || "Your brand slogan..."}
                   </div>
-                  <div className="absolute top-4 right-4 bg-white shadow-sm border border-gray-100 rounded-full p-1.5 text-lime-600 opacity-0 group-hover:opacity-100 transition-all">
-                    <Pencil className="w-3.5 h-3.5" />
+                  <div className="flex flex-col items-center w-1/2">
+                    <div className="text-4xl lg:text-5xl text-[#C1CD7D] tracking-tight group-hover:scale-105 transition-transform" style={{ fontFamily: dna.typography?.bodyFont }}>Aa</div>
+                    <div className="text-[11px] font-medium text-center text-[#9A9A9C] w-full mt-3 truncate">
+                       {dna.typography?.bodyFont || "Helvetica Now Medium"}
+                    </div>
                   </div>
                 </div>
-                <div 
-                  className="bg-[#f8f9fa] border border-transparent rounded-3xl p-6 flex flex-col relative group cursor-pointer hover:border-lime-200 transition-all min-h-[120px]"
-                  onClick={() => setTagsModalConfig({
-                    isOpen: true, field: "brandValue", title: "Brand values",
-                    subtitle: "Describe your brand's values", placeholder: "Press Enter to add...",
-                    initialTags: formatPills(dna.brandValue || "")
-                  })}
-                >
-                  <div className="text-[12px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Values</div>
-                  <div className="flex flex-wrap gap-1.5 pr-6">
-                    {(!dna.brandValue || dna.brandValue.trim() === "") ? (
-                      <span className="px-3 py-1 rounded-full border border-slate-200 text-[11px] font-semibold text-slate-400 bg-white">Add values...</span>
-                    ) : (
-                      formatPills(dna.brandValue).map((pill, i) => (
-                        <span key={i} className="px-3 py-1 rounded-full border border-slate-200 text-[11px] font-bold text-slate-600 bg-white inline-block truncate max-w-[110px] uppercase tracking-tight">{pill}</span>
-                      ))
-                    )}
-                  </div>
-                  <div className="absolute top-4 right-4 bg-white shadow-sm border border-gray-100 rounded-full p-1.5 text-lime-600 opacity-0 group-hover:opacity-100 transition-all">
-                    <Pencil className="w-3.5 h-3.5" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Business Overview */}
-              <div 
-                className="w-full bg-[#f8f9fa] border border-transparent rounded-3xl p-7 flex flex-col relative group cursor-pointer hover:border-lime-200 transition-all shrink-0 min-h-[100px]"
-                onClick={() => openEditor("businessOverview", dna.businessOverview || "")} 
-              >
-                <div className="text-[12px] font-bold text-slate-400 mb-3 uppercase tracking-widest">Business overview</div>
-                <p className={`text-[13px] leading-relaxed pr-8 ${dna.businessOverview ? "text-slate-600 font-medium" : "text-slate-300 italic"}`}>
-                   {dna.businessOverview || "Describe your business goals and mission..."}
-                </p>
-                <div className="absolute top-5 right-5 bg-white shadow-sm border border-gray-100 rounded-full p-1.5 text-lime-600 opacity-0 group-hover:opacity-100 transition-all">
-                  <Pencil className="w-3.5 h-3.5" />
+                <div className="absolute top-4 right-4 bg-[#4A4B4D] rounded-full p-2 text-[#C1CD7D] opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-md">
+                  <Pencil className="w-4 h-4" />
                 </div>
               </div>
             </div>
 
-            {/* ═══════ RIGHT: Images (Scrollable, 4 Columns) ═══════ */}
-            <div className="flex flex-col flex-1 min-w-0 overflow-y-auto scrollbar-none pb-4">
-              <div className="text-[18px] font-bold text-[#1e293b] mb-5 tracking-tight shrink-0">Images</div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 content-start">
-                <label className="bg-[#ecfccb] text-lime-700 rounded-xl aspect-square flex flex-col items-center justify-center cursor-pointer hover:bg-[#e4f8b9] transition-all group/upload active:scale-95 border border-transparent">
-                  <Upload className="w-5 h-5 mb-1.5 transition-transform group-hover/upload:-translate-y-0.5" />
-                  <span className="text-[10px] font-extrabold text-center leading-tight uppercase tracking-widest opacity-80">Upload</span>
-                  <input type="file" accept="image/*" multiple className="hidden" 
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files || []);
-                      const newUrls = files.map(file => URL.createObjectURL(file));
-                      setDna(prev => ({ ...prev, images: [...(prev.images || []), ...newUrls] }));
-                    }} 
-                  />
-                </label>
-                {(dna.images || []).map((img, i) => (
-                  <div key={i} className="aspect-square bg-white rounded-xl overflow-hidden relative group/img cursor-pointer shadow-sm border border-gray-50 hover:shadow-md transition-all"
-                    onClick={() => setLightboxImage(img)}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={img} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover/img:scale-105" />
-                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover/img:opacity-100 transition-opacity pointer-events-none" />
-                    <button className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-white text-gray-700 shadow-lg border border-gray-100 hover:text-red-500 transition-all transform scale-90 opacity-0 group-hover/img:opacity-100 group-hover/img:scale-100 z-10"
-                      onClick={(e) => { e.stopPropagation(); setDeleteImageIndex(i); }}>
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+            {/* Colors */}
+            <div 
+              className="w-full bg-[#363738] rounded-2xl p-6 lg:p-8 flex flex-col cursor-pointer hover:ring-1 hover:ring-[#C1CD7D] transition-all group relative shrink-0"
+              onClick={() => setIsColorModalOpen(true)}
+            >
+              <div className="text-[15px] font-medium text-[#EAEAEA] mb-6">Colors</div>
+              <div className="flex gap-4 sm:gap-6 items-center justify-start overflow-x-auto pb-2 scrollbar-none pr-10">
+                {Object.values(colors).map((value, i) => (
+                  <div key={i} className="flex flex-col items-center gap-4 relative group/swatch shrink-0">
+                    <div 
+                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-full shadow-lg border-2 border-[#2C2D2E] group-hover/swatch:scale-110 transition-transform cursor-pointer"
+                      style={{ backgroundColor: value }}
+                    />
                   </div>
                 ))}
               </div>
+              <div className="absolute top-5 right-5 bg-[#4A4B4D] rounded-full p-2 text-[#C1CD7D] opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
+                <Pencil className="w-4 h-4" />
+              </div>
             </div>
+
+            {/* Tagline & Brand Values */}
+            <div className="grid grid-cols-2 gap-4 lg:gap-5 shrink-0">
+              {/* Tagline */}
+              <div 
+                className="bg-[#363738] rounded-2xl p-6 flex flex-col relative group cursor-pointer hover:ring-1 hover:ring-[#C1CD7D] transition-all min-h-[140px]"
+                onClick={() => openEditor("tagline", dna.tagline || "")} // Use generic text modal
+              >
+                <div className="text-[15px] font-medium text-[#EAEAEA] mb-3">Tagline</div>
+                <div className="text-xl lg:text-2xl font-serif text-[#C1CD7D] italic leading-tight w-full pr-6 line-clamp-2">
+                  {dna.tagline || "Your first digital..."}
+                </div>
+                <div className="absolute top-4 right-4 bg-[#4A4B4D] rounded-full p-2 text-[#C1CD7D] opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
+                  <Pencil className="w-4 h-4" />
+                </div>
+              </div>
+
+              {/* Brand Values */}
+              <div 
+                className="bg-[#363738] rounded-2xl p-6 flex flex-col relative group cursor-pointer hover:ring-1 hover:ring-[#C1CD7D] transition-all min-h-[140px]"
+                onClick={() => setTagsModalConfig({
+                  isOpen: true,
+                  field: "brandValue",
+                  title: "Brand values",
+                  subtitle: "Describe your brand's values",
+                  placeholder: "Press Enter to add a new brand value...",
+                  initialTags: formatPills(dna.brandValue || "Transparency, Full ownership, Respect & gratitude, Work is play")
+                })}
+              >
+                <div className="text-[15px] font-medium text-[#EAEAEA] mb-4">Brand values</div>
+                <div className="flex flex-wrap gap-2 pr-6">
+                  {formatPills(dna.brandValue || "Transparency, Full ownership, Respect & gratitude, Work is play").map((pill, i) => (
+                    <span key={i} className="px-3 py-1.5 rounded-full border border-white/5 text-[12px] font-medium text-[#9A9A9C] bg-[#2C2D2E] shadow-sm">{pill}</span>
+                  ))}
+                </div>
+                <div className="absolute top-4 right-4 bg-[#4A4B4D] rounded-full p-2 text-[#C1CD7D] opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
+                  <Pencil className="w-4 h-4" />
+                </div>
+              </div>
+            </div>
+
+            {/* Brand Aesthetic & Tone of Voice */}
+            <div className="grid grid-cols-2 gap-4 lg:gap-5 shrink-0">
+              {/* Brand Aesthetic */}
+              <div 
+                className="bg-[#363738] rounded-2xl p-6 flex flex-col relative group cursor-pointer hover:ring-1 hover:ring-[#C1CD7D] transition-all min-h-[140px]"
+                onClick={() => setTagsModalConfig({
+                  isOpen: true,
+                  field: "brandAesthetic",
+                  title: "Brand aesthetic",
+                  subtitle: "Describe your brand's aesthetic",
+                  placeholder: "Press Enter to add a new aesthetic...",
+                  initialTags: formatPills(dna.brandAesthetic || "Whimsical-Futurism, Human-Centric, Polished, Accessible, Vibrant")
+                })}
+              >
+                <div className="text-[15px] font-medium text-[#EAEAEA] mb-4">Brand aesthetic</div>
+                <div className="flex flex-wrap gap-2 pr-6">
+                  {formatPills(dna.brandAesthetic || "Whimsical-Futurism, Human-Centric, Polished, Accessible, Vibrant").map((pill, i) => (
+                    <span key={i} className="px-3 py-1.5 rounded-full border border-white/5 text-[12px] font-medium text-[#9A9A9C] bg-[#2C2D2E] shadow-sm">{pill}</span>
+                  ))}
+                </div>
+                <div className="absolute top-4 right-4 bg-[#4A4B4D] rounded-full p-2 text-[#C1CD7D] opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
+                  <Pencil className="w-4 h-4" />
+                </div>
+              </div>
+
+              {/* Tone of Voice */}
+              <div 
+                className="bg-[#363738] rounded-2xl p-6 flex flex-col relative group cursor-pointer hover:ring-1 hover:ring-[#C1CD7D] transition-all min-h-[140px]"
+                onClick={() => setTagsModalConfig({
+                  isOpen: true,
+                  field: "toneOfVoice",
+                  title: "Brand tone of voice",
+                  subtitle: "Describe your brand's tone of voice",
+                  placeholder: "Press Enter to add a new tone...",
+                  initialTags: formatPills(dna.toneOfVoice || "Friendly, Approachable, Simple, Bold")
+                })}
+              >
+                <div className="text-[15px] font-medium text-[#EAEAEA] mb-4">Brand tone of voice</div>
+                <div className="flex flex-wrap gap-2 pr-6">
+                  {formatPills(dna.toneOfVoice || "Friendly, Approachable, Simple, Bold").map((pill, i) => (
+                    <span key={i} className="px-3 py-1.5 rounded-full border border-white/5 text-[12px] font-medium text-[#9A9A9C] bg-[#2C2D2E] shadow-sm">{pill}</span>
+                  ))}
+                </div>
+                <div className="absolute top-4 right-4 bg-[#4A4B4D] rounded-full p-2 text-[#C1CD7D] opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
+                  <Pencil className="w-4 h-4" />
+                </div>
+              </div>
+            </div>
+
+            {/* Business Overview */}
+            <div 
+              className="w-full bg-[#363738] rounded-2xl p-6 lg:p-8 flex flex-col relative group cursor-pointer hover:ring-1 hover:ring-[#C1CD7D] transition-all shrink-0 min-h-[140px]"
+              onClick={() => openEditor("businessOverview", dna.businessOverview || "")} // Use generic text modal
+            >
+              <div className="text-[15px] font-medium text-[#EAEAEA] mb-3">Business overview</div>
+              <p className="text-[#9A9A9C] text-[13px] leading-relaxed pr-8">
+                 {dna.businessOverview || "Sintra AI provides a specialized team of digital AI employees designed to automate repetitive business tasks across marketing, operations, and support 24/7. The platform enables entrepreneurs and small businesses to scale efficiently by delegating work to AI agents that learn specific brand contexts and integrate with existing tools."}
+              </p>
+              <div className="absolute top-5 right-5 bg-[#4A4B4D] rounded-full p-2 text-[#C1CD7D] opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
+                <Pencil className="w-4 h-4" />
+              </div>
+            </div>
+
           </div>
 
-          {/* ═══════ FOOTER (Solid, inside container) ═══════ */}
-          <div className="shrink-0 border-t border-gray-100 bg-white px-10 py-4 flex justify-end items-center gap-4 rounded-b-[36px]">
-            <button 
-              onClick={handleResetDna}
-              className="text-slate-500 px-5 py-2.5 rounded-full font-bold text-[14px] hover:text-[#1e293b] hover:bg-gray-50 transition-all active:scale-95 flex items-center gap-2"
-            >
-              <RotateCcw className="w-4 h-4" />
-              Reset
-            </button>
-            <button 
-              onClick={() => setIsLooksGoodConfirmOpen(true)}
-              className="bg-[#84cc16] text-white px-8 py-3 rounded-full font-extrabold text-[14px] hover:bg-[#65a30d] shadow-md shadow-lime-200/40 transition-all shrink-0 active:scale-95"
-            >
-              Looks good
-            </button>
-          </div>
+          {/* ═══════ COLUMN 2: Images ═══════ */}
+          <div className="flex flex-col w-full lg:w-[420px] shrink-0 overflow-y-auto scrollbar-none pb-20 lg:pb-0 pr-2 relative">
 
+            <div className="text-[15px] font-medium text-[#EAEAEA] mb-4">Images</div>
+            
+            {/* Endless Creatives CTA */}
+            <div className="mb-4 bg-[#3d3f38] p-5 rounded-[20px] shadow-sm flex flex-col gap-3 relative overflow-hidden">
+                <div className="relative z-10 w-2/3 md:w-full lg:w-3/4">
+                  <div className="text-[14px] font-medium text-[#EAEAEA] mb-2">Endless creatives, ready in minutes</div>
+                  <p className="text-[13px] text-[#9A9A9C] leading-snug mb-4">
+                    Skip the cost and complexity of traditional photoshoots and generate compelling, on-brand images that drive your sales.
+                  </p>
+                  <a href="/photoshoot" className="inline-flex items-center gap-2 bg-[#C1CD7D] text-[#1B1B1B] text-[13px] font-semibold px-4 py-2.5 rounded-[12px] w-fit hover:bg-[#D4E08F] transition-colors">
+                    <Camera className="w-4 h-4 text-[#1B1B1B]" />
+                    Try Photoshoot
+                  </a>
+                </div>
+                {/* Simulated background images behind text on the right side based on classic layout patterns */}
+                <div className="absolute right-0 top-0 bottom-0 w-1/3 md:w-auto opacity-30 lg:opacity-40">
+                  <div className="grid grid-cols-2 gap-1 h-full py-2">
+                    <div className="w-12 h-12 bg-zinc-800 rounded-md"></div>
+                    <div className="w-12 h-12 bg-zinc-700 rounded-md"></div>
+                    <div className="w-12 h-12 bg-zinc-600 rounded-md"></div>
+                    <div className="w-12 h-12 bg-zinc-800 rounded-md"></div>
+                  </div>
+                </div>
+            </div>
+
+            {/* Images Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 flex-1 content-start">
+              {/* Upload Button */}
+              <div className="bg-[#363738] text-[#C1CD7D] rounded-[20px] aspect-square flex flex-col items-center justify-center cursor-pointer hover:bg-[#4A4B4D] transition-colors group/upload">
+                <Upload className="w-5 h-5 mb-2 group-hover/upload:-translate-y-1 transition-transform" />
+                <span className="text-[12px] font-medium text-center leading-tight">Upload<br/>Images</span>
+              </div>
+              
+              {/* Thumbnails */}
+              {(dna.images || []).slice(0, 11).map((img, i) => (
+                <div 
+                  key={i} 
+                  className="aspect-square bg-[#363738] rounded-[20px] overflow-hidden relative group/img cursor-pointer"
+                  onClick={() => setLightboxImage(img)}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={img} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover/img:scale-105" />
+                  
+                  {/* Hover Delete Button */}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity">
+                     <button 
+                       className="absolute top-3 right-3 w-8 h-8 flex items-center justify-center rounded-full bg-[#2C2D2E]/90 text-[#EAEAEA] backdrop-blur hover:bg-[#414244] transition-colors"
+                       onClick={(e) => { e.stopPropagation(); setDeleteImageIndex(i); }}
+                     >
+                       <X className="w-4 h-4" />
+                     </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Looks Good Footer & Reset */}
+            <div className="mt-4 pt-6 flex items-center justify-between">
+              {/* Moved Reset button to bottom left slightly muted */}
+              <button 
+                onClick={() => setIsResetConfirmOpen(true)}
+                className="flex items-center gap-1.5 text-zinc-500 hover:text-red-400 font-medium text-[12px] transition-colors group"
+              >
+                <RotateCcw className="w-3.5 h-3.5 group-hover:-rotate-180 transition-transform duration-500" />
+                Reset DNA
+              </button>
+              
+              <div className="flex items-center gap-6">
+                <span className="text-[#9A9A9C] text-[13px] font-medium tracking-wide">
+                  Next we&apos;ll use your Business DNA to generate social media campaigns
+                </span>
+                <button 
+                  className="bg-[#C1CD7D] text-[#1B1B1B] px-8 py-3 rounded-full font-semibold text-[14px] hover:bg-[#D4E08F] shadow-lg transition-colors"
+                >
+                  Looks good
+                </button>
+              </div>
+            </div>
+
+          </div>
         </div>
       </div>
-
 
       {/* ── Modals ── */}
       {tagsModalConfig.isOpen && (
@@ -315,26 +402,26 @@ export default function BrandBoard({ initialDna }: { initialDna: any }) {
       )}
 
       {editingField && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-white border border-gray-100 rounded-[32px] p-8 w-full max-w-md shadow-2xl relative">
-            <button onClick={() => setEditingField(null)} className="absolute top-6 right-6 w-8 h-8 flex items-center justify-center rounded-full bg-gray-50 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors shadow-sm">
-              <X className="w-4 h-4" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-[#2B2B2D] border border-white/5 rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
+            <button onClick={() => setEditingField(null)} className="absolute top-4 right-4 text-zinc-400 hover:text-white p-1 rounded-full hover:bg-white/10 transition-colors">
+              <X className="w-5 h-5" />
             </button>
-            <h3 className="text-xl font-bold text-gray-900 mb-1 capitalize">
+            <h3 className="text-lg font-medium text-[#EAEAEA] mb-1 capitalize">
               {editingField.replace(/([A-Z])/g, ' $1').trim()}
             </h3>
-            <p className="text-[14px] text-gray-500 mb-6 font-medium">Edit or add comma-separated values.</p>
+            <p className="text-sm text-[#9A9A9C] mb-4">Edit or add comma-separated values.</p>
             <textarea 
               autoFocus
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl p-5 text-gray-900 text-[15px] outline-none focus:border-lime-500 min-h-[160px] resize-none font-semibold transition-colors shadow-inner"
+              className="w-full bg-transparent border border-[#C4CE83] rounded-lg p-4 text-[#EAEAEA] text-sm outline-none focus:ring-1 focus:ring-[#C4CE83] min-h-[120px] resize-none"
               placeholder="Type here..."
             />
-            <div className="flex justify-end mt-8">
+            <div className="flex justify-end mt-4">
                <button 
                  onClick={saveEdit}
-                 className="bg-lime-400 text-white hover:bg-lime-500 px-10 py-3 rounded-full font-bold transition-all text-[14px] shadow-md active:scale-95"
+                 className="bg-[#414138] text-[#C4CE83] hover:bg-[#4E5042] px-6 py-2 rounded-full font-medium transition-colors text-sm"
                >
                  Apply
                </button>
@@ -352,8 +439,9 @@ export default function BrandBoard({ initialDna }: { initialDna: any }) {
               colors: {
                 primary: newColors[0] || prev.colors.primary,
                 secondary: newColors[1] || prev.colors.secondary,
-                tertiary: newColors[2] || prev.colors.tertiary,
-                quaternary: newColors[3] || prev.colors.quaternary,
+                background: newColors[2] || prev.colors.background,
+                textHighContrast: newColors[3] || prev.colors.textHighContrast,
+                accent: prev.colors.accent
               }
             }));
             setIsColorModalOpen(false);
@@ -402,20 +490,6 @@ export default function BrandBoard({ initialDna }: { initialDna: any }) {
         />
       )}
 
-      {isLooksGoodConfirmOpen && (
-        <ConfirmationModal
-          title="Start creating campaigns?"
-          description="Your Brand DNA will be saved and used to generate social media content. You can always come back to edit it later."
-          confirmLabel="Let's go →"
-          isDestructive={false}
-          onConfirm={() => {
-            localStorage.setItem("brandDna", JSON.stringify(dna));
-            window.location.href = '/campaigns/create';
-          }}
-          onClose={() => setIsLooksGoodConfirmOpen(false)}
-        />
-      )}
-
       {isResetConfirmOpen && (
         <ConfirmationModal
           title="Reset Business DNA?"
@@ -423,6 +497,7 @@ export default function BrandBoard({ initialDna }: { initialDna: any }) {
           confirmLabel="Reset"
           isDestructive={true}
           onConfirm={() => {
+            // Actual reset logic would clear state and maybe redirect
             handleResetDna();
             setIsResetConfirmOpen(false);
           }}

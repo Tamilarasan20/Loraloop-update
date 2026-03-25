@@ -16,8 +16,8 @@ function TwitterPreview({ content, images }: { content: string; images: string[]
         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#C1CD7D] to-[#8fa37a] shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <span className="font-bold text-[14px]">ScaleSoci</span>
-            <span className="text-gray-400 text-[13px]">@scalesoci · 1m</span>
+            <span className="font-bold text-[14px]">Growloop</span>
+            <span className="text-gray-400 text-[13px]">@growloop · 1m</span>
           </div>
           <p className="text-[14px] leading-[1.4] mt-1 whitespace-pre-wrap break-words">
             {truncated}
@@ -49,7 +49,7 @@ function LinkedInPreview({ content, images }: { content: string; images: string[
       <div className="flex gap-3 mb-3">
         <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#0A66C2] to-[#004182] shrink-0" />
         <div>
-          <span className="font-semibold text-[14px] block">ScaleSoci AI</span>
+          <span className="font-semibold text-[14px] block">Growloop AI</span>
           <span className="text-gray-500 text-[12px] block">AI-Powered Growth · 1m</span>
           <span className="text-gray-400 text-[11px]">🌍</span>
         </div>
@@ -79,7 +79,7 @@ function InstagramPreview({ content, images }: { content: string; images: string
       {/* Header */}
       <div className="flex items-center gap-3 p-3">
         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#F58529] via-[#DD2A7B] to-[#8134AF] shrink-0" />
-        <span className="font-semibold text-[13px]">scalesoci.ai</span>
+        <span className="font-semibold text-[13px]">growloop.ai</span>
       </div>
       {/* Image */}
       <div className="aspect-square bg-gray-100 flex items-center justify-center">
@@ -98,7 +98,7 @@ function InstagramPreview({ content, images }: { content: string; images: string
           <span>📤</span>
         </div>
         <p className="text-[13px] leading-[1.4]">
-          <span className="font-semibold">scalesoci.ai </span>
+          <span className="font-semibold">growloop.ai </span>
           {content.length > 125 ? content.slice(0, 125) + "...more" : content}
         </p>
       </div>
@@ -113,7 +113,7 @@ function TikTokPreview({ content }: { content: string }) {
       <div className="relative z-10">
         <div className="flex items-center gap-2 mb-2">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#69C9D0] to-[#EE1D52] shrink-0" />
-          <span className="font-bold text-[13px]">@scalesoci</span>
+          <span className="font-bold text-[13px]">@growloop</span>
         </div>
         <p className="text-[13px] leading-[1.4]">
           {content.length > 150 ? content.slice(0, 147) + "..." : content}

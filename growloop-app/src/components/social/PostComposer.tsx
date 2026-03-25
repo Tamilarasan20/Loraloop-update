@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { Image as ImageIcon, Video, X, Smile, Hash, AtSign } from "lucide-react";
-import PlatformSelector, { ALL_PLATFORMS, type Platform } from "./PlatformSelector";
-import { getChannels } from "@/lib/postiz-client";
+import PlatformSelector, { DEFAULT_PLATFORMS } from "./PlatformSelector";
 
 interface PostComposerProps {
   onPublish?: (data: ComposerData) => void;
@@ -33,52 +32,10 @@ export default function PostComposer({
   const [scheduleDate, setScheduleDate] = useState("");
   const [showScheduler, setShowScheduler] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [platforms, setPlatforms] = useState<Platform[]>(ALL_PLATFORMS);
-
-  useEffect(() => {
-    async function fetchPlatforms() {
-      try {
-        const channels = await getChannels();
-        const mappedPlatforms = ALL_PLATFORMS.map((basePlatform) => {
-          const channel = channels.find((c) => c.type === basePlatform.type);
-          if (channel) {
-            return {
-              ...basePlatform,
-              id: channel.id,
-              name: channel.name,
-              connected: !channel.disabled,
-              username: channel.profile || channel.name,
-            };
-          }
-          return basePlatform;
-        });
-
-         channels.forEach(channel => {
-            if (!mappedPlatforms.some(p => p.id === channel.id)) {
-                 const base = ALL_PLATFORMS.find(p => p.type === channel.type);
-                 if (base) {
-                     mappedPlatforms.push({
-                         ...base,
-                         id: channel.id,
-                         name: channel.name,
-                         connected: !channel.disabled,
-                         username: channel.profile || channel.name
-                     });
-                 }
-            }
-        });
-
-        setPlatforms(mappedPlatforms);
-      } catch (error) {
-        console.error("Failed to fetch channels in Composer:", error);
-      }
-    }
-    fetchPlatforms();
-  }, []);
 
   // Character limit for the most restrictive selected platform
   const getCharLimit = () => {
-    const selected = platforms.filter((p) =>
+    const selected = DEFAULT_PLATFORMS.filter((p) =>
       selectedPlatforms.includes(p.id)
     );
     if (selected.length === 0) return 280;
@@ -128,14 +85,14 @@ export default function PostComposer({
       />
 
       {/* Composer Card */}
-      <div className="bg-white border border-gray-200 rounded-[24px] overflow-hidden shadow-sm">
+      <div className="bg-[#2C2D2E] border border-white/5 rounded-[24px] overflow-hidden shadow-xl">
         {/* Text Area */}
         <div className="relative">
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="What's on your mind? Write your post here..."
-            className="w-full bg-transparent text-gray-900 text-[15px] leading-relaxed p-6 min-h-[200px] resize-none outline-none placeholder-gray-400 font-bold"
+            className="w-full bg-transparent text-[#EAEAEA] text-[15px] leading-relaxed p-6 min-h-[200px] resize-none outline-none placeholder-[#525355] font-medium"
             rows={6}
           />
 
@@ -148,7 +105,7 @@ export default function PostComposer({
                   cy="18"
                   r="15"
                   fill="none"
-                  stroke="#f1f5f9"
+                  stroke="#363738"
                   strokeWidth="3"
                 />
                 <circle
@@ -156,7 +113,7 @@ export default function PostComposer({
                   cy="18"
                   r="15"
                   fill="none"
-                  stroke={isOverLimit ? "#ef4444" : charPercent > 80 ? "#f59e0b" : "#84cc16"}
+                  stroke={isOverLimit ? "#EF4444" : charPercent > 80 ? "#F59E0B" : "#C1CD7D"}
                   strokeWidth="3"
                   strokeDasharray={`${charPercent} ${100 - charPercent}`}
                   strokeLinecap="round"
@@ -165,7 +122,7 @@ export default function PostComposer({
               {charCount > 0 && (
                 <span
                   className={`absolute inset-0 flex items-center justify-center text-[8px] font-bold ${
-                    isOverLimit ? "text-red-500" : "text-gray-400"
+                    isOverLimit ? "text-red-400" : "text-[#9A9A9C]"
                   }`}
                 >
                   {isOverLimit ? `-${charCount - charLimit}` : charLimit - charCount}
@@ -181,7 +138,7 @@ export default function PostComposer({
             {imagePreviews.map((preview, i) => (
               <div
                 key={i}
-                className="relative w-24 h-24 rounded-xl overflow-hidden group bg-gray-50 border border-gray-100"
+                className="relative w-24 h-24 rounded-xl overflow-hidden group bg-[#363738]"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -191,7 +148,7 @@ export default function PostComposer({
                 />
                 <button
                   onClick={() => removeImage(i)}
-                  className="absolute top-1.5 right-1.5 w-6 h-6 bg-white/90 backdrop-blur rounded-full flex items-center justify-center text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:text-red-500"
+                  className="absolute top-1.5 right-1.5 w-6 h-6 bg-black/60 backdrop-blur rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -201,11 +158,11 @@ export default function PostComposer({
         )}
 
         {/* Toolbar */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
+        <div className="flex items-center justify-between px-6 py-4 border-t border-white/5">
           <div className="flex items-center gap-1">
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="p-2.5 rounded-xl text-gray-400 hover:text-gray-900 hover:bg-gray-50 transition-colors"
+              className="p-2.5 rounded-xl text-[#9A9A9C] hover:text-[#EAEAEA] hover:bg-white/5 transition-colors"
               title="Add image"
             >
               <ImageIcon className="w-5 h-5" />
@@ -220,27 +177,27 @@ export default function PostComposer({
             />
 
             <button
-              className="p-2.5 rounded-xl text-gray-400 hover:text-gray-900 hover:bg-gray-50 transition-colors"
+              className="p-2.5 rounded-xl text-[#9A9A9C] hover:text-[#EAEAEA] hover:bg-white/5 transition-colors"
               title="Add video"
             >
               <Video className="w-5 h-5" />
             </button>
             <button
-              className="p-2.5 rounded-xl text-gray-400 hover:text-gray-900 hover:bg-gray-50 transition-colors"
+              className="p-2.5 rounded-xl text-[#9A9A9C] hover:text-[#EAEAEA] hover:bg-white/5 transition-colors"
               title="Add emoji"
             >
               <Smile className="w-5 h-5" />
             </button>
             <button
               onClick={() => setContent((prev) => prev + " #")}
-              className="p-2.5 rounded-xl text-gray-400 hover:text-gray-900 hover:bg-gray-50 transition-colors"
+              className="p-2.5 rounded-xl text-[#9A9A9C] hover:text-[#EAEAEA] hover:bg-white/5 transition-colors"
               title="Add hashtag"
             >
               <Hash className="w-5 h-5" />
             </button>
             <button
               onClick={() => setContent((prev) => prev + " @")}
-              className="p-2.5 rounded-xl text-gray-400 hover:text-gray-900 hover:bg-gray-50 transition-colors"
+              className="p-2.5 rounded-xl text-[#9A9A9C] hover:text-[#EAEAEA] hover:bg-white/5 transition-colors"
               title="Mention"
             >
               <AtSign className="w-5 h-5" />
@@ -250,7 +207,7 @@ export default function PostComposer({
           {/* Platform char limit indicator */}
           <div className="flex items-center gap-2">
             {selectedPlatforms.length > 0 && (
-              <span className="text-[11px] text-gray-400 font-bold uppercase tracking-wider">
+              <span className="text-[11px] text-[#9A9A9C] font-medium">
                 {selectedPlatforms.length} platform{selectedPlatforms.length !== 1 ? "s" : ""}
               </span>
             )}
@@ -260,15 +217,15 @@ export default function PostComposer({
 
       {/* Scheduling Bar */}
       {showScheduler && (
-        <div className="bg-white border border-gray-200 rounded-[24px] p-6 flex items-center gap-4 animate-in slide-in-from-top-4 duration-300 shadow-sm">
-          <label className="text-[13px] text-gray-500 font-bold uppercase tracking-wider whitespace-nowrap">
+        <div className="bg-[#2C2D2E] border border-white/5 rounded-2xl p-5 flex items-center gap-4 animate-in slide-in-from-top-4 duration-300">
+          <label className="text-[13px] text-[#9A9A9C] font-medium whitespace-nowrap">
             Schedule for:
           </label>
           <input
             type="datetime-local"
             value={scheduleDate}
             onChange={(e) => setScheduleDate(e.target.value)}
-            className="flex-1 bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-gray-900 text-[14px] outline-none focus:border-lime-500 font-bold shadow-inner"
+            className="flex-1 bg-[#1B1B1B] border border-transparent rounded-xl px-4 py-3 text-[#EAEAEA] text-[14px] outline-none focus:border-[#4A4B4D] font-medium"
           />
           <button
             onClick={() => {
@@ -277,10 +234,10 @@ export default function PostComposer({
               }
             }}
             disabled={!scheduleDate || !canPublish}
-            className={`px-8 py-3 rounded-full font-bold text-[14px] transition-all whitespace-nowrap shadow-md active:scale-95 ${
+            className={`px-6 py-3 rounded-full font-semibold text-[14px] transition-colors whitespace-nowrap ${
               scheduleDate && canPublish
-                ? "bg-lime-400 text-white hover:bg-lime-500"
-                : "bg-gray-100 text-gray-300 cursor-not-allowed"
+                ? "bg-[#C1CD7D] text-[#1B1B1B] hover:bg-[#D4E08F] shadow-lg"
+                : "bg-[#414244] text-[#9A9A9C] cursor-not-allowed"
             }`}
           >
             Schedule Post
@@ -292,7 +249,7 @@ export default function PostComposer({
       <div className="flex items-center justify-between">
         <button
           onClick={() => onSaveDraft?.(composerData)}
-          className="text-gray-400 hover:text-gray-900 font-bold text-[14px] transition-colors px-4 py-2 uppercase tracking-widest"
+          className="text-[#9A9A9C] hover:text-[#EAEAEA] font-medium text-[14px] transition-colors px-4 py-2"
         >
           Save as Draft
         </button>
@@ -300,10 +257,10 @@ export default function PostComposer({
         <div className="flex items-center gap-3">
           <button
             onClick={() => setShowScheduler(!showScheduler)}
-            className={`px-8 py-3 rounded-full font-bold text-[14px] border-2 transition-all active:scale-95 ${
+            className={`px-6 py-3 rounded-full font-semibold text-[14px] border-2 transition-colors ${
               showScheduler
-                ? "border-lime-400 text-lime-700 bg-lime-50 shadow-sm"
-                : "border-gray-200 text-gray-500 hover:border-gray-300 bg-white"
+                ? "border-[#C1CD7D] text-[#C1CD7D] bg-[#C1CD7D]/5"
+                : "border-white/10 text-[#EAEAEA] hover:border-white/20 bg-[#2C2D2E]"
             }`}
           >
             {showScheduler ? "Cancel Schedule" : "Schedule Later"}
@@ -312,10 +269,10 @@ export default function PostComposer({
           <button
             onClick={() => canPublish && onPublish?.(composerData)}
             disabled={!canPublish}
-            className={`px-10 py-3 rounded-full font-bold text-[14px] transition-all shadow-md active:scale-95 ${
+            className={`px-8 py-3 rounded-full font-semibold text-[14px] transition-all shadow-lg ${
               canPublish
-                ? "bg-lime-400 text-white hover:bg-lime-500 hover:shadow-lg"
-                : "bg-gray-100 text-gray-300 cursor-not-allowed"
+                ? "bg-[#C1CD7D] text-[#1B1B1B] hover:bg-[#D4E08F] hover:shadow-xl active:scale-95"
+                : "bg-[#414244] text-[#9A9A9C] cursor-not-allowed shadow-none"
             }`}
           >
             Publish Now

@@ -66,81 +66,73 @@ export default function AutomationPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
+    <div className="min-h-screen bg-[#1B1B1B] text-[#EAEAEA]">
       {/* Top Bar */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-white sticky top-0 z-20">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
         <div className="flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2 text-gray-400 hover:text-gray-900 transition-colors text-[14px] font-bold uppercase tracking-wider">
+          <Link href="/" className="flex items-center gap-2 text-[#9A9A9C] hover:text-[#EAEAEA] transition-colors text-[14px] font-medium">
             <ArrowLeft className="w-4 h-4" />
             Back
           </Link>
-          <div className="w-px h-6 bg-gray-200" />
-          <h1 className="text-[20px] font-bold flex items-center gap-2 tracking-tight">
-            <Zap className="w-5 h-5 text-lime-500" />
+          <div className="w-px h-6 bg-white/10" />
+          <h1 className="text-[20px] font-medium flex items-center gap-2">
+            <Zap className="w-5 h-5 text-[#C1CD7D]" />
             Automation
           </h1>
         </div>
-        <button className="flex items-center gap-2 bg-lime-400 text-white px-6 py-2.5 rounded-full font-bold text-[13px] hover:bg-lime-500 transition-all shadow-md active:scale-95">
+        <button className="flex items-center gap-2 bg-[#C1CD7D] text-[#1B1B1B] px-5 py-2.5 rounded-full font-semibold text-[13px] hover:bg-[#D4E08F] transition-colors shadow-lg">
           <Plus className="w-4 h-4" />
           New Rule
         </button>
       </div>
 
-      <div className="max-w-4xl mx-auto px-6 py-12 flex flex-col gap-8">
+      <div className="max-w-4xl mx-auto px-6 py-8 flex flex-col gap-6">
         {/* Stats Bar */}
-        <div className="grid grid-cols-3 gap-6">
-          <div className="bg-white border border-gray-200 rounded-2xl p-6 text-center shadow-sm">
-            <div className="text-[32px] font-bold text-lime-600">{rules.filter(r => r.enabled).length}</div>
-            <div className="text-[13px] text-gray-400 font-bold uppercase tracking-wider">Active Rules</div>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="bg-[#2C2D2E] border border-white/5 rounded-2xl p-5 text-center">
+            <div className="text-[28px] font-bold text-[#C1CD7D]">{rules.filter(r => r.enabled).length}</div>
+            <div className="text-[13px] text-[#9A9A9C] font-medium">Active Rules</div>
           </div>
-          <div className="bg-white border border-gray-200 rounded-2xl p-6 text-center shadow-sm">
-            <div className="text-[32px] font-bold text-gray-900">1,247</div>
-            <div className="text-[13px] text-gray-400 font-bold uppercase tracking-wider">Actions This Month</div>
+          <div className="bg-[#2C2D2E] border border-white/5 rounded-2xl p-5 text-center">
+            <div className="text-[28px] font-bold text-[#EAEAEA]">1,247</div>
+            <div className="text-[13px] text-[#9A9A9C] font-medium">Actions This Month</div>
           </div>
-          <div className="bg-white border border-gray-200 rounded-2xl p-6 text-center shadow-sm">
-            <div className="text-[32px] font-bold text-gray-900">~4.2 hrs</div>
-            <div className="text-[13px] text-gray-400 font-bold uppercase tracking-wider">Time Saved</div>
+          <div className="bg-[#2C2D2E] border border-white/5 rounded-2xl p-5 text-center">
+            <div className="text-[28px] font-bold text-[#EAEAEA]">~4.2 hrs</div>
+            <div className="text-[13px] text-[#9A9A9C] font-medium">Time Saved</div>
           </div>
         </div>
 
         {/* Rules List */}
         <div className="flex flex-col gap-4">
-          <h2 className="text-[13px] font-bold text-gray-400 uppercase tracking-widest mb-2">Configure Rules</h2>
           {rules.map((rule) => (
             <div
               key={rule.id}
-              className={`bg-white border rounded-[24px] p-8 flex items-start gap-6 transition-all shadow-sm group hover:shadow-md hover:border-lime-300 ${
-                rule.enabled ? "border-gray-200" : "border-gray-100 opacity-60 grayscale-[0.5]"
+              className={`bg-[#2C2D2E] border rounded-[20px] p-6 flex items-start gap-5 transition-all ${
+                rule.enabled ? "border-white/5" : "border-white/5 opacity-60"
               }`}
             >
               {/* Icon */}
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-inner border ${
-                rule.enabled ? "bg-lime-50 text-lime-600 border-lime-100" : "bg-gray-50 text-gray-400 border-gray-100"
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${
+                rule.enabled ? "bg-[#C1CD7D]/15 text-[#C1CD7D]" : "bg-white/5 text-[#9A9A9C]"
               }`}>
-                <rule.icon className="w-7 h-7" />
+                <rule.icon className="w-6 h-6" />
               </div>
 
               {/* Content */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3 mb-2">
-                  <h3 className="text-[18px] font-bold text-gray-900">
-                    {rule.name}
-                  </h3>
-                  {!rule.enabled && (
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-50 px-2 py-0.5 rounded-full border border-gray-100">
-                      Disabled
-                    </span>
-                  )}
-                </div>
-                <p className="text-[14px] text-gray-500 mb-5 font-bold leading-relaxed">
+                <h3 className="text-[15px] font-semibold text-[#EAEAEA] mb-1">
+                  {rule.name}
+                </h3>
+                <p className="text-[13px] text-[#9A9A9C] mb-3 font-medium">
                   {rule.description}
                 </p>
                 <div className="flex items-center gap-3">
-                  <span className="text-[11px] bg-gray-50 border border-gray-100 text-gray-500 px-3.5 py-1.5 rounded-xl font-bold uppercase tracking-wider">
+                  <span className="text-[11px] bg-[#363738] text-[#9A9A9C] px-3 py-1 rounded-full font-medium">
                     ⚡ {rule.trigger}
                   </span>
-                  <span className="text-gray-300 font-bold">→</span>
-                  <span className="text-[11px] bg-lime-50 border border-lime-100 text-lime-600 px-3.5 py-1.5 rounded-xl font-bold uppercase tracking-wider">
+                  <span className="text-[#525355]">→</span>
+                  <span className="text-[11px] bg-[#363738] text-[#9A9A9C] px-3 py-1 rounded-full font-medium">
                     🎯 {rule.action}
                   </span>
                 </div>
@@ -149,13 +141,13 @@ export default function AutomationPage() {
               {/* Toggle */}
               <button
                 onClick={() => toggleRule(rule.id)}
-                className={`relative w-14 h-8 rounded-full transition-all shrink-0 shadow-inner border ${
-                  rule.enabled ? "bg-lime-400 border-lime-500" : "bg-gray-100 border-gray-200"
+                className={`relative w-12 h-7 rounded-full transition-colors shrink-0 ${
+                  rule.enabled ? "bg-[#C1CD7D]" : "bg-[#414244]"
                 }`}
               >
                 <div
-                  className={`absolute top-1 w-6 h-6 rounded-full bg-white shadow-lg transition-all ${
-                    rule.enabled ? "left-7" : "left-1"
+                  className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-transform ${
+                    rule.enabled ? "left-6" : "left-1"
                   }`}
                 />
               </button>
