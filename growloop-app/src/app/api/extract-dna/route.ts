@@ -15,16 +15,39 @@ function normalizeUrl(raw: string): string {
 function isUsefulImage(src: string): boolean {
   if (!src || src.length < 10) return false;
   const lower = src.toLowerCase();
-  // Filter tracking pixels, ads, analytics, tiny icons
   const junk = [
     "pixel", "track", "analytics", "beacon", "1x1", "spacer",
     "facebook.com/tr", "google-analytics", "doubleclick",
     "googletagmanager", "hotjar", ".gif", "data:image/gif",
     "data:image/svg+xml", "gravatar", "wp-emoji",
+    "wpcf7", "spinner", "loading.gif", "placeholder",
   ];
   if (junk.some((j) => lower.includes(j))) return false;
   if (lower.endsWith(".ico") && !lower.includes("logo")) return false;
+  // Skip very short path segments that look like icons/favicons  
+  if (/\/(icon|favicon|sprite|arrow|chevron|check|star|dot|close|menu|hamburger)/i.test(lower)) return false;
   return true;
+}
+
+// Normalize image URL to detect duplicates from srcset variants
+// e.g. image-300x200.jpg and image-1200x800.jpg → same base image
+function normalizeImageUrl(src: string): string {
+  try {
+    const u = new URL(src);
+    // Remove common CDN size params
+    ["w", "h", "width", "height", "size", "q", "quality", "fit", "resize", "scale", "format", "auto", "fm"].forEach((p) => u.searchParams.delete(p));
+    // Strip WP-style dimension suffixes: -300x200, _300x200, @2x, -scaled, -large, -medium, -small, -thumbnail
+    let path = u.pathname
+      .replace(/-\d+x\d+(\.[a-zA-Z]+)$/, "$1")       // -300x200.jpg
+      .replace(/_\d+x\d+(\.[a-zA-Z]+)$/, "$1")       // _300x200.jpg
+      .replace(/@[0-9.]+x(\.[a-zA-Z]+)$/, "$1")      // @2x.png
+      .replace(/-(scaled|large|medium|small|thumbnail|full|crop)(\.[a-zA-Z]+)$/, "$2") // -scaled.jpg
+      .replace(/\/(w_\d+|h_\d+|c_\w+|f_\w+|q_\w+),?/g, "/"); // Cloudinary segments
+    u.pathname = path;
+    return u.origin + u.pathname; // Drop query entirely for dedup key
+  } catch {
+    return src;
+  }
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -569,8 +592,21 @@ export async function POST(req: Request) {
 
     // Filter images for quality
     extractedImages = extractedImages.filter(isUsefulImage);
-    // Deduplicate
-    extractedImages = [...new Set(extractedImages)].slice(0, 50);
+    
+    // Deduplicate by normalized URL (strips dimension suffixes, CDN params)
+    // Keep the ORIGINAL URL (not the normalized key) for display, but use normalized key for set membership
+    const seenNormalized = new Set<string>();
+    const deduped: string[] = [];
+    // Sort by URL length descending — longer URLs tend to be higher resolution
+    extractedImages.sort((a, b) => b.length - a.length);
+    for (const img of extractedImages) {
+      const key = normalizeImageUrl(img);
+      if (!seenNormalized.has(key)) {
+        seenNormalized.add(key);
+        deduped.push(img);
+      }
+    }
+    extractedImages = deduped.slice(0, 50);
 
     // Clearbit logo fallback
     if (!extractedLogo || !extractedLogo.startsWith("http")) {
