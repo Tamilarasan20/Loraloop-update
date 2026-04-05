@@ -24,6 +24,10 @@ function LoadingContent() {
 
   // Start extraction API call and manage steps
   useEffect(() => {
+    // Clear old extraction cache to ensure fresh data every time
+    localStorage.removeItem("brandDna");
+    localStorage.removeItem("brandDocuments");
+
     let currentStep = 0;
     const interval = setInterval(() => {
       currentStep++;

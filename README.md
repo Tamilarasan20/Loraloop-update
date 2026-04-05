@@ -1,10 +1,10 @@
-# Growloop.ai — Unified Social Media & Brand DNA Platform
+# Loraloop.ai — Unified Social Media & Brand DNA Platform
 
-Growloop.ai is a next-generation platform for digital presence, combining AI-driven Brand DNA extraction with a powerful multi-platform social media scheduler, publisher, and analytics engine.
+Loraloop.ai is a next-generation platform for digital presence, combining AI-driven Brand DNA extraction with a powerful multi-platform social media scheduler, publisher, and analytics engine.
 
 ## 🏗️ Repository Structure
 
-- **`/growloop-app`** — The core Next.js 16 application (App Router, TypeScript, Tailwind CSS).
+- **`/loraloop-app`** — The core Next.js 16 application (App Router, TypeScript, Tailwind CSS).
 - **`/docs`** — Project documentation and research materials.
 - **`docker-compose.yml`** — Infrastructure for the self-hosted Postiz backend.
 - **`setup-postiz.sh`** — Automated setup script for the full developer stack.
@@ -27,7 +27,7 @@ This script will:
 
 ### 3. Application Setup
 ```bash
-cd growloop-app
+cd loraloop-app
 npm install
 npm run dev
 ```
@@ -53,7 +53,7 @@ Full-stack social media management integrated via [Postiz](https://postiz.com).
 
 ## 🔐 Environment Variables
 
-- **`.env.local`** (in `growloop-app/`): Application-specific secrets (Gemini API key).
+- **`.env.local`** (in `loraloop-app/`): Application-specific secrets (Gemini API key).
 - **`.env.postiz`** (in root): Social media platform OAuth keys (X, Meta, LinkedIn).
 
 ---

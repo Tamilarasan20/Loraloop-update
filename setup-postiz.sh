@@ -1,11 +1,11 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════
-# Postiz Self-Hosted Setup Script for Growloop.ai
+# Postiz Self-Hosted Setup Script for Loraloop.ai
 # ═══════════════════════════════════════════════════════════════
 
 set -e
 
-echo "🚀 Growloop.ai — Postiz Self-Hosted Setup"
+echo "🚀 Loraloop.ai — Postiz Self-Hosted Setup"
 echo "═══════════════════════════════════════════"
 echo ""
 
@@ -65,11 +65,11 @@ echo "✅ Postiz stack is starting!"
 echo ""
 echo "📍 Postiz Frontend:   http://localhost:4007"
 echo "📍 Temporal UI:       http://localhost:8080"
-echo "📍 Growloop.ai:       http://localhost:3000"
+echo "📍 Loraloop.ai:       http://localhost:3000"
 echo ""
 echo "1️⃣  Open http://localhost:4007 to create your Postiz admin account"
 echo "2️⃣  Connect your social media accounts in Postiz Settings"
-echo "3️⃣  Run 'npm run dev' to start Growloop.ai"
+echo "3️⃣  Run 'npm run dev' to start Loraloop.ai"
 echo ""
 echo "To stop:  docker compose down"
 echo "To reset: docker compose down -v (removes all data)"
