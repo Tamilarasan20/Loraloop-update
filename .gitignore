@@ -1,6 +1,9 @@
 # Environment
 .env
 .env.*
+**/.env.local
+**/.env.*.local
+.env.postiz
 
 # Python
 __pycache__/
@@ -19,9 +22,26 @@ venv/
 .lora_snapshots/
 .lora_profiles/
 
+# Node / Next.js
+**/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+**/.next/
+**/out/
+
+# Docker & Volumes
+postgres-volume/
+postiz-redis-data/
+postiz-config/
+postiz-uploads/
+temporal-es-data/
+temporal-pg-data/
+
 # OS
 .DS_Store
 Thumbs.db
+*.log
 
 # IDE
 .vscode/
