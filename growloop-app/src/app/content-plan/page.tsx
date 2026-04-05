@@ -21,7 +21,7 @@ interface ChannelConnection {
 
 const CONTENT_PLAN_CHANNELS: ChannelConnection[] = [
   // In your Content Plan — Autopilot channels
-  { id: "1", name: "Instagram", type: "instagram", icon: "📷", color: "#E1306C", gradientFrom: "#F58529", gradientTo: "#DD2A7B", connected: true, username: "@growloop.ai", category: "social" },
+  { id: "1", name: "Instagram", type: "instagram", icon: "📷", color: "#E1306C", gradientFrom: "#F58529", gradientTo: "#DD2A7B", connected: true, username: "@loraloop.ai", category: "social" },
   { id: "2", name: "Facebook", type: "facebook", icon: "f", color: "#1877F2", connected: false, category: "social" },
   { id: "3", name: "YouTube", type: "youtube", icon: "▶", color: "#FF0000", connected: false, category: "social" },
   { id: "4", name: "WordPress", type: "wordpress", icon: "W", color: "#21759B", connected: false, category: "blog", switchable: true, alternates: [{ name: "Medium", type: "medium" }, { name: "Ghost", type: "ghost" }, { name: "Webflow", type: "webflow" }] },

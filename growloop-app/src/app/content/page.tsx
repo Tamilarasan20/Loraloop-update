@@ -17,7 +17,7 @@ interface ContentItem {
 const MOCK_CONTENT: ContentItem[] = [
   { id: "1", title: "Product Launch Post", content: "Introducing our latest AI feature that helps you...", platforms: ["x", "linkedin"], status: "scheduled", date: "Mar 20, 2026 09:00 AM" },
   { id: "2", title: "Weekly Tips Thread", content: "5 tips for growing your social presence in 2026...", platforms: ["x"], status: "draft" },
-  { id: "3", title: "Behind the Scenes", content: "Take a look at how we build products at Growloop...", platforms: ["instagram"], status: "published", engagement: 1240 },
+  { id: "3", title: "Behind the Scenes", content: "Take a look at how we build products at Loraloop...", platforms: ["instagram"], status: "published", engagement: 1240 },
   { id: "4", title: "Blog Promotion", content: "Our latest blog post on AI automation is live!", platforms: ["linkedin", "x"], status: "published", engagement: 890 },
   { id: "5", title: "Team Spotlight", content: "Meet our new engineering lead, Sarah Chen!", platforms: ["linkedin", "instagram"], status: "draft" },
   { id: "6", title: "Customer Success Story", content: "How company X grew their audience by 300%...", platforms: ["linkedin"], status: "failed" },

@@ -23,10 +23,10 @@ interface PendingPost {
 }
 
 const MEMBERS: Member[] = [
-  { id: "1", name: "You", email: "you@growloop.ai", role: "Admin", avatar: "🧑‍💻", lastActive: "Just now" },
-  { id: "2", name: "Sarah Chen", email: "sarah@growloop.ai", role: "Editor", avatar: "👩‍🎨", lastActive: "2h ago" },
-  { id: "3", name: "Mike Johnson", email: "mike@growloop.ai", role: "Editor", avatar: "👨‍💼", lastActive: "1d ago" },
-  { id: "4", name: "Lisa Park", email: "lisa@growloop.ai", role: "Viewer", avatar: "👩‍🔬", lastActive: "3d ago" },
+  { id: "1", name: "You", email: "you@loraloop.ai", role: "Admin", avatar: "🧑‍💻", lastActive: "Just now" },
+  { id: "2", name: "Sarah Chen", email: "sarah@loraloop.ai", role: "Editor", avatar: "👩‍🎨", lastActive: "2h ago" },
+  { id: "3", name: "Mike Johnson", email: "mike@loraloop.ai", role: "Editor", avatar: "👨‍💼", lastActive: "1d ago" },
+  { id: "4", name: "Lisa Park", email: "lisa@loraloop.ai", role: "Viewer", avatar: "👩‍🔬", lastActive: "3d ago" },
 ];
 
 const PENDING_POSTS: PendingPost[] = [

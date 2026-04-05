@@ -31,7 +31,7 @@ export const ALL_PLATFORMS: Platform[] = [
     gradientTo: "#DD2A7B",
     maxChars: 2200,
     connected: true,
-    username: "@growloop.ai",
+    username: "@loraloop.ai",
     category: "social",
   },
   {
@@ -42,7 +42,7 @@ export const ALL_PLATFORMS: Platform[] = [
     color: "#1877F2",
     maxChars: 63206,
     connected: true,
-    username: "Growloop AI",
+    username: "Loraloop AI",
     category: "social",
   },
   {
@@ -53,7 +53,7 @@ export const ALL_PLATFORMS: Platform[] = [
     color: "#000000",
     maxChars: 280,
     connected: true,
-    username: "@growloop",
+    username: "@loraloop",
     category: "social",
   },
   {
@@ -64,7 +64,7 @@ export const ALL_PLATFORMS: Platform[] = [
     color: "#0A66C2",
     maxChars: 3000,
     connected: true,
-    username: "Growloop AI",
+    username: "Loraloop AI",
     category: "social",
   },
   {
