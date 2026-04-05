@@ -1,5 +1,4 @@
-# Loraloop — Unified Social Media & Brand DNA Platform
-
+# Loraloop — Autonomous AI marketting Team/Company
 Loraloop is a next-generation platform for digital presence, combining AI-driven Brand DNA extraction with a powerful multi-platform social media scheduler, publisher, and analytics engine.
 
 ## 🏗️ Repository Structure
