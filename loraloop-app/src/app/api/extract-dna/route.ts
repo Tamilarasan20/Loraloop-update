@@ -685,7 +685,14 @@ STRICT REQUIREMENTS:
 6. If extracted fonts are system fonts like Arial/Helvetica, suggest the closest Google Font equivalent.
 7. Return ONLY the JSON object. No other text.`;
 
-    const MODELS_TO_TRY = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+    // Current Gemini models (2025) — 1.5 family is deprecated and returns 404
+    const MODELS_TO_TRY = [
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-lite",
+      "gemini-2.5-pro",
+    ];
     let aiText: string | null = null;
 
     for (const modelName of MODELS_TO_TRY) {

@@ -78,9 +78,16 @@ ${prompt}
 
 Generate creative, actionable, and specific ideas that align with the brand's values, aesthetic, and tone of voice. Be practical and implementable.`;
 
-    // Try models in order
-    const MODELS = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
+    // Current Gemini models (2025) — 1.5 family is deprecated and returns 404
+    const MODELS = [
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-2.0-flash",
+      "gemini-2.0-flash-lite",
+      "gemini-2.5-pro",
+    ];
     let content = "";
+    let lastError = "";
 
     for (const model of MODELS) {
       try {
@@ -97,15 +104,22 @@ Generate creative, actionable, and specific ideas that align with the brand's va
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[generate-content] ${model} failed:`, msg.slice(0, 150));
+        lastError = msg;
+        console.warn(`[generate-content] ${model} failed:`, msg.slice(0, 250));
       }
     }
 
     if (!content) {
-      return NextResponse.json(
-        { error: "Failed to generate content" },
-        { status: 500 }
-      );
+      // Surface a useful error for common cases
+      let userMsg = "Failed to generate content";
+      if (lastError.includes("API key") || lastError.includes("API_KEY_INVALID") || lastError.includes("leaked") || lastError.includes("PERMISSION_DENIED")) {
+        userMsg = "Gemini API key is invalid or revoked. Generate a new key at https://aistudio.google.com/apikey and update .env.local";
+      } else if (lastError.includes("429") || lastError.includes("quota") || lastError.includes("RESOURCE_EXHAUSTED")) {
+        userMsg = "Gemini API rate limit exceeded. Please wait a moment and try again.";
+      } else if (lastError.includes("404") || lastError.includes("not found")) {
+        userMsg = "All Gemini models returned 404. The model names may be deprecated.";
+      }
+      return NextResponse.json({ error: userMsg, detail: lastError.slice(0, 300) }, { status: 500 });
     }
 
     return NextResponse.json({ content });

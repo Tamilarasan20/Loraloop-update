@@ -80,8 +80,11 @@ export default function CampaignsPage() {
         body: JSON.stringify({ businessId, prompt }),
       });
 
-      if (!res.ok) throw new Error("Failed to generate content");
       const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || `Server error ${res.status}`);
+      }
 
       const aiMsg: Message = {
         id: (Date.now() + 1).toString(),
@@ -90,12 +93,12 @@ export default function CampaignsPage() {
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, aiMsg]);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
       const errorMsg: Message = {
         id: (Date.now() + 1).toString(),
         type: "ai",
-        content: "Sorry, I couldn't generate that content. Please try again.",
+        content: `⚠️ ${e.message || "Sorry, I couldn't generate that content."}`,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMsg]);
