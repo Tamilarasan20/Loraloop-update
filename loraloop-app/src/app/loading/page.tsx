@@ -21,6 +21,7 @@ function LoadingContent() {
   const targetUrl = urlParam.startsWith("http") ? urlParam : `https://${urlParam}`;
 
   const [activeStepIndex, setActiveStepIndex] = useState(0);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Start extraction API call and manage steps
   useEffect(() => {
@@ -34,52 +35,107 @@ function LoadingContent() {
       if (currentStep < STEPS.length) {
         setActiveStepIndex(currentStep);
       }
-    }, 2000); // Simulate progress visually while we wait for the slower API
+    }, 2000);
+
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    // 5-minute timeout
+    const timeoutId = setTimeout(() => {
+      if (pollInterval) clearInterval(pollInterval);
+      clearInterval(interval);
+      setErrorMsg("Processing timed out. The website may be too slow or blocked.");
+    }, 300_000);
 
     const extractData = async () => {
       try {
-        const response = await fetch('/api/extract-dna', {
+        const response = await fetch('/api/process-business', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: targetUrl }),
         });
 
         if (!response.ok) {
-           console.error("Failed to extract data, using fallback routing");
-           throw new Error("HTTP " + response.status);
+          const errBody = await response.json().catch(() => ({}));
+          throw new Error(errBody.error || `Server error ${response.status}`);
         }
-        
-        const data = await response.json();
-        
-        if (data && data.dna) {
-          localStorage.setItem("brandDna", JSON.stringify(data.dna));
-        }
-        if (data && data.documents) {
-          localStorage.setItem("brandDocuments", JSON.stringify(data.documents));
-        }
-        
-        // Wait at least a moment so the animation doesn't feel jarring if it was too fast
-        setTimeout(() => {
-           clearInterval(interval);
-           setActiveStepIndex(STEPS.length); // complete all
-           router.push(`/board?url=${encodeURIComponent(targetUrl)}`);
-        }, 1500);
 
-      } catch (err) {
+        const data = await response.json();
+
+        if (!data.businessId) {
+          throw new Error("No business ID returned from server");
+        }
+
+        const businessId = data.businessId;
+
+        // Poll for completion
+        pollInterval = setInterval(async () => {
+          try {
+            const statusRes = await fetch(`/api/check-status?id=${businessId}`);
+            if (!statusRes.ok) return;
+            const statusData = await statusRes.json();
+
+            if (statusData.status === 'completed') {
+              if (pollInterval) clearInterval(pollInterval);
+              clearInterval(interval);
+              clearTimeout(timeoutId);
+              setActiveStepIndex(STEPS.length);
+              router.push(`/board?id=${businessId}`);
+            } else if (statusData.status === 'failed') {
+              if (pollInterval) clearInterval(pollInterval);
+              clearInterval(interval);
+              clearTimeout(timeoutId);
+              // Still go to board — it will show whatever partial data exists
+              router.push(`/board?id=${businessId}`);
+            }
+          } catch {
+            // Ignore transient poll errors
+          }
+        }, 3000);
+
+      } catch (err: any) {
         console.error("Extraction error:", err);
-        // Fallback: Proceed to board anyway and let board handle missing data or use its defaults
-        setTimeout(() => {
-           clearInterval(interval);
-           setActiveStepIndex(STEPS.length);
-           router.push(`/board?url=${encodeURIComponent(targetUrl)}`);
-        }, 1500);
+        clearInterval(interval);
+        clearTimeout(timeoutId);
+        setErrorMsg(err.message || "Failed to start analysis. Please try again.");
       }
     };
 
     extractData();
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (pollInterval) clearInterval(pollInterval);
+      clearTimeout(timeoutId);
+    };
   }, [router, targetUrl]);
+
+  // Error state — show message + back button, never loop to board
+  if (errorMsg) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-[#FAFBFC] font-sans relative">
+        <div className="bg-white rounded-[32px] p-10 w-full max-w-[500px] flex flex-col items-center z-10 relative text-center">
+          <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mb-5">
+            <span className="text-2xl">⚠️</span>
+          </div>
+          <h1 className="text-[22px] font-bold text-[#111111] mb-3">Something went wrong</h1>
+          <p className="text-[14px] text-[#71717A] mb-8 leading-relaxed">{errorMsg}</p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => router.push('/')}
+              className="px-6 py-2.5 rounded-full border border-[#E5E7EB] text-[14px] font-semibold text-[#111111] hover:bg-gray-50 transition-colors"
+            >
+              ← Back
+            </button>
+            <button
+              onClick={() => { setErrorMsg(null); window.location.reload(); }}
+              className="px-6 py-2.5 rounded-full bg-[#111111] text-white text-[14px] font-semibold hover:bg-[#27272A] transition-colors"
+            >
+              Try again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center bg-[#FAFBFC] font-sans relative">
