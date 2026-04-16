@@ -63,16 +63,16 @@ async function autoScroll(page: Page) {
   await page.evaluate(async () => {
     await new Promise<void>((resolve) => {
       let totalHeight = 0;
-      const distance = 400;
+      const distance = 800;   // bigger jumps (was 400)
       const timer = setInterval(() => {
         window.scrollBy(0, distance);
         totalHeight += distance;
-        if (totalHeight >= document.body.scrollHeight || totalHeight > 8000) {
+        if (totalHeight >= document.body.scrollHeight || totalHeight > 5000) { // cap at 5k (was 8k)
           clearInterval(timer);
           window.scrollTo(0, 0);
           resolve();
         }
-      }, 150);
+      }, 80); // faster interval (was 150ms)
     });
   });
 }
@@ -466,27 +466,24 @@ export async function POST(req: Request) {
         bypassCSP: true,
       });
 
-      // Block heavy non-essential resources
-      await context.route("**/*.{mp4,webm,ogg,mp3,wav,flac,woff2,woff,ttf,eot}", (route) => route.abort());
+      // Block heavy resources we don't need (we only want URLs, not file contents)
+      await context.route("**/*.{mp4,webm,ogg,mp3,wav,flac,woff2,woff,ttf,eot,pdf,zip}", (route) => route.abort());
 
       const page = await context.newPage();
 
-      // Navigate to main page
+      // Navigate to main page — domcontentloaded is fast enough
       console.log("[extract-dna] 📄 Loading main page...");
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
 
-      // Wait for lazy-loaded content & JS rendering
-      try { await page.waitForLoadState("networkidle", { timeout: 8000 }); } catch { /* timeout is ok */ }
+      // Short networkidle wait — enough for JS to render, don't over-wait
+      try { await page.waitForLoadState("networkidle", { timeout: 4000 }); } catch { /* timeout ok */ }
 
-      // Dismiss cookie banners / popups
+      // Dismiss popups then scroll
       await dismissPopups(page);
-
-      // Auto-scroll to trigger lazy loading
-      console.log("[extract-dna] 📜 Scrolling to trigger lazy images...");
+      console.log("[extract-dna] 📜 Scrolling...");
       await autoScroll(page);
-      await page.waitForTimeout(1500);
+      await page.waitForTimeout(300); // was 1500ms
 
-      // Scrape the main page
       const mainData = await scrapePage(page);
 
       extractedColors = mainData.colors;
@@ -496,39 +493,43 @@ export async function POST(req: Request) {
       textSample = mainData.textSample;
       pageTitle = mainData.pageTitle;
 
-      console.log(`[extract-dna] ✅ Main page: ${extractedImages.length} images, ${extractedColors.length} colors, ${extractedFonts.length} fonts`);
+      console.log(`[extract-dna] ✅ Main page: ${extractedImages.length} images, ${extractedColors.length} colors`);
 
-      // ── CRAWL INTERNAL PAGES (About, Products, etc.) ──
-      const internalLinks = mainData.internalLinks;
+      // ── CRAWL INTERNAL PAGES IN PARALLEL (was sequential — biggest bottleneck) ──
+      // Limit to 2 most valuable pages (about + products) — quality stays, time halves
+      const internalLinks = mainData.internalLinks.slice(0, 2);
       if (internalLinks.length > 0) {
-        console.log(`[extract-dna] 🔗 Crawling ${internalLinks.length} internal pages:`, internalLinks);
-        for (const link of internalLinks) {
+        console.log(`[extract-dna] 🔗 Crawling ${internalLinks.length} sub-pages in parallel...`);
+
+        const scrapeSubPage = async (link: string) => {
+          const subPage = await context.newPage();
           try {
-            const subPage = await context.newPage();
-            await subPage.goto(link, { waitUntil: "domcontentloaded", timeout: 12000 });
-            try { await subPage.waitForLoadState("networkidle", { timeout: 5000 }); } catch { /* ok */ }
+            await subPage.goto(link, { waitUntil: "domcontentloaded", timeout: 10000 });
+            try { await subPage.waitForLoadState("networkidle", { timeout: 2500 }); } catch { /* ok */ }
             await autoScroll(subPage);
-            await subPage.waitForTimeout(800);
-
             const subData = await scrapePage(subPage);
-
-            // Merge images (deduplicated)
-            for (const img of subData.images) {
-              if (!extractedImages.includes(img)) extractedImages.push(img);
-            }
-            // Merge text
-            if (subData.textSample) {
-              textSample += " | [" + link.split("/").pop() + "] " + subData.textSample;
-            }
-            // Merge colors
-            for (const c of subData.colors) {
-              if (!extractedColors.includes(c)) extractedColors.push(c);
-            }
-
-            await subPage.close();
             console.log(`[extract-dna]   ✅ ${link} — +${subData.images.length} images`);
-          } catch (subErr) {
-            console.warn(`[extract-dna]   ⚠ Failed to crawl ${link}:`, subErr);
+            return subData;
+          } catch (err) {
+            console.warn(`[extract-dna]   ⚠ Failed: ${link}`, err);
+            return null;
+          } finally {
+            await subPage.close();
+          }
+        };
+
+        // Run all sub-pages at the same time instead of one-by-one
+        const subResults = await Promise.allSettled(internalLinks.map(scrapeSubPage));
+
+        for (const result of subResults) {
+          if (result.status !== "fulfilled" || !result.value) continue;
+          const subData = result.value;
+          for (const img of subData.images) {
+            if (!extractedImages.includes(img)) extractedImages.push(img);
+          }
+          if (subData.textSample) textSample += " | " + subData.textSample;
+          for (const c of subData.colors) {
+            if (!extractedColors.includes(c)) extractedColors.push(c);
           }
         }
       }
