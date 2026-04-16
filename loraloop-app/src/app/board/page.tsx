@@ -586,7 +586,10 @@ function BoardContent() {
             >
               Reset
             </button>
-            <button className="bg-[#2563EB] text-white px-8 py-2.5 rounded-xl font-semibold text-[14px] hover:bg-[#1D4ED8] shadow-md transition-colors shadow-blue-500/20">
+            <button
+              onClick={() => router.push(`/campaigns?id=${businessId}`)}
+              className="bg-[#2563EB] text-white px-8 py-2.5 rounded-xl font-semibold text-[14px] hover:bg-[#1D4ED8] shadow-md transition-colors shadow-blue-500/20"
+            >
               Looks Good
             </button>
           </div>
