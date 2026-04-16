@@ -9,6 +9,29 @@ import {
 } from "lucide-react";
 
 // ─────────────────────────────────────────────
+// Image sanitizer — strips stored srcset strings into clean URLs
+// ─────────────────────────────────────────────
+function cleanImageList(raw: any[]): string[] {
+  const results: string[] = [];
+  for (const item of raw) {
+    const src = typeof item === "string" ? item : (item?.url || "");
+    if (!src) continue;
+    // Srcset strings: "url1 1024w, url2 600w" or "url1 2x, url2 1x"
+    if (/\s+\d+(\.\d+)?[wx]/.test(src) || /,\s*https?:\/\//.test(src)) {
+      // Extract the highest-res URL (last entry = largest width in ascending srcset)
+      const candidates = src.split(",")
+        .map((e: string) => e.trim().split(/\s+/)[0])
+        .filter((u: string) => u.startsWith("http"));
+      if (candidates.length > 0) results.push(candidates[candidates.length - 1]);
+    } else if (src.startsWith("http") && !src.includes(" ")) {
+      results.push(src);
+    }
+  }
+  // Deduplicate
+  return [...new Set(results)];
+}
+
+// ─────────────────────────────────────────────
 // Markdown renderer
 // ─────────────────────────────────────────────
 function SimpleMarkdown({ content }: { content: string }) {
@@ -414,7 +437,7 @@ function BoardContent() {
           brandAesthetic: enriched.brandAesthetic || "",
           toneOfVoice: enriched.brandTone || "",
           businessOverview: enriched.businessOverview || "",
-          images: guidelines.images || data.scraped_data?.images?.map((img: any) => img.url) || [],
+          images: cleanImageList(guidelines.images || data.scraped_data?.images?.map((img: any) => img.url) || []),
         });
 
         setDocs({

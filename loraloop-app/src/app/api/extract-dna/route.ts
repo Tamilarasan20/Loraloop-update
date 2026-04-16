@@ -14,6 +14,12 @@ function normalizeUrl(raw: string): string {
 
 function isUsefulImage(src: string): boolean {
   if (!src || src.length < 10) return false;
+  // Reject srcset strings — they contain spaces + dimension descriptors
+  if (/\s+\d+(\.\d+)?[wx]/.test(src)) return false;
+  // Reject strings with multiple URLs (srcset format)
+  if (/,\s*https?:\/\//.test(src)) return false;
+  // Must be a clean single URL (no unencoded spaces)
+  if (src.includes(" ")) return false;
   const lower = src.toLowerCase();
   const junk = [
     "pixel", "track", "analytics", "beacon", "1x1", "spacer",
@@ -24,7 +30,6 @@ function isUsefulImage(src: string): boolean {
   ];
   if (junk.some((j) => lower.includes(j))) return false;
   if (lower.endsWith(".ico") && !lower.includes("logo")) return false;
-  // Skip very short path segments that look like icons/favicons  
   if (/\/(icon|favicon|sprite|arrow|chevron|check|star|dot|close|menu|hamburger)/i.test(lower)) return false;
   return true;
 }
@@ -108,11 +113,28 @@ async function scrapePage(page: Page) {
 
     const seenSrcs = new Set<string>();
     const images: string[] = [];
+
+    // Extracts the first clean URL from a potential srcset string or plain URL
+    const extractCleanUrl = (raw: string): string => {
+      const s = raw.trim();
+      // Srcset strings look like "url1 1024w, url2 600w" or "url1 2x, url2 1x"
+      // They contain space + digit + w/x or a comma followed by a URL
+      if (/\s+\d+(\.\d+)?[wx]/.test(s) || /,\s*https?:\/\//.test(s)) {
+        // Parse as srcset — take the LARGEST resolution (first entry by width or last by order)
+        const candidates = s.split(",")
+          .map((entry: string) => entry.trim().split(/\s+/)[0])
+          .filter((u: string) => u.startsWith("http") || u.startsWith("//"));
+        // Prefer the widest (entries sorted ascending by "Nw" — last = biggest)
+        return candidates[candidates.length - 1] || "";
+      }
+      return s;
+    };
+
     const addImg = (src: string | null | undefined) => {
       if (!src) return;
-      let s = src.trim();
+      let s = extractCleanUrl(src);
       if (s.startsWith("//")) s = "https:" + s;
-      if (s && !seenSrcs.has(s) && s.startsWith("http")) {
+      if (s && !seenSrcs.has(s) && s.startsWith("http") && !s.includes(" ")) {
         seenSrcs.add(s);
         images.push(s);
       }
@@ -206,23 +228,26 @@ async function scrapePage(page: Page) {
     // ── IMAGES — aggressive multi-source capture ──
 
     // Strategy 1: All <img> tags with every lazy-load attribute variant
-    const lazyAttrs = ["src", "data-src", "data-lazy-src", "data-original", "data-srcset",
+    // NOTE: data-srcset is intentionally excluded — handled by the srcset block below
+    const lazyAttrs = ["src", "data-src", "data-lazy-src", "data-original",
       "data-lazy", "data-image", "data-bg", "data-full", "data-hi-res", "loading-src"];
     for (const img of Array.from(document.querySelectorAll("img"))) {
       for (const attr of lazyAttrs) {
         const val = img.getAttribute(attr);
-        if (val && val.startsWith("http")) addImg(val);
-        else if (val && val.startsWith("//")) addImg("https:" + val);
-        else if (val && val.startsWith("/") && !val.startsWith("//")) {
+        if (!val) continue;
+        if (val.startsWith("http") || val.startsWith("//")) {
+          addImg(val);
+        } else if (val.startsWith("/")) {
           try { addImg(new URL(val, document.baseURI).href); } catch { /* skip */ }
         }
       }
-      // srcset — pick the best (last/largest) resolution
+      // srcset + data-srcset — split properly, take LARGEST resolution
       const srcset = img.getAttribute("srcset") || img.getAttribute("data-srcset");
       if (srcset) {
-        const candidates = srcset.split(",").map((s) => s.trim().split(/\s+/)[0]).filter(Boolean);
-        candidates.forEach((c) => {
-          try { addImg(new URL(c, document.baseURI).href); } catch { addImg(c); }
+        srcset.split(",").forEach((entry: string) => {
+          const u = entry.trim().split(/\s+/)[0];
+          if (!u) return;
+          try { addImg(new URL(u, document.baseURI).href); } catch { addImg(u); }
         });
       }
     }
