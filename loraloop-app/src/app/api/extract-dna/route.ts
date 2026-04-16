@@ -734,62 +734,142 @@ STRICT REQUIREMENTS:
     console.log("[extract-dna] ✅ Brand DNA complete:", parsedDna.brandName);
 
     // ══════════════════════════════════════════════════════════
-    // PHASE 3 — DOCUMENT GENERATION
+    // PHASE 3 — DOCUMENT GENERATION (3 separate plain-text calls)
     // ══════════════════════════════════════════════════════════
 
-    let documents = { strategy: "", marketResearch: "", businessProfile: "" };
-
-    const docsPrompt = `You are a senior brand strategist and market analyst. Based on this brand data for "${parsedDna.brandName}" (${url}):
-
-Brand Overview: ${parsedDna.businessOverview}
+    const brandContext = `
+Brand: ${parsedDna.brandName}
+Website: ${url}
+Overview: ${parsedDna.businessOverview}
 Tagline: ${parsedDna.tagline}
 Brand Values: ${parsedDna.brandValue}
 Brand Aesthetic: ${parsedDna.brandAesthetic}
 Tone of Voice: ${parsedDna.toneOfVoice}
-Website Text Context: """${textSample.slice(0, 2500)}"""
+Website Text: """${textSample.slice(0, 3000)}"""
+`.trim();
 
-Generate THREE detailed, data-driven documents. Return ONLY a JSON object with this exact schema (no markdown fences):
-{
-  "strategy": "Full social media strategy in markdown. Required headers: ## Priority Platforms, ## Content Pillars, ## Posting Cadence, ## Messaging Hierarchy, ## Quick Wins. Be specific to the brand's actual industry.",
-  "marketResearch": "Full market research in markdown. Required headers: ## Market Opportunity, ## Competitive Landscape (list 10 real competitors), ## SEO & GEO Keywords, ## Target Audiences on Social.",
-  "businessProfile": "Full business profile in markdown. Required headers: ## Overview, ## Products, ## Key Selling Points, ## Retail Presence, ## Target Audience. Base on website text."
-}
+    const docPrompts: Record<string, string> = {
+      businessProfile: `You are a senior brand analyst. Using ONLY information from the website text below, write a detailed Business Profile document in markdown.
+
+${brandContext}
+
+Write the Business Profile with these exact sections:
+# ${parsedDna.brandName} – Business Profile
+
+## Overview
+2-3 paragraphs covering what the business does, their mission, founding story if mentioned, and market positioning.
+
+## Products
+List every product, service or offering mentioned on the website with a short description of each.
+
+## Key Selling Points
+5-8 bullet points of the most compelling reasons to choose this brand (from website content).
+
+## Retail Presence
+Where the products are sold — online store, retailers, marketplaces, physical locations mentioned on the site.
+
+## Target Audience
+Who this brand serves — demographics, psychographics, interests, based on the website tone and content.
 
 Rules:
-- Each value is a single markdown string. Use \\n for newlines. Use - for bullets. Use **bold** for emphasis.
-- Competitors must be REAL companies in the same industry/niche.
-- SEO keywords must be realistic high-value terms.
-- Do NOT hallucinate products not mentioned on the website.`;
+- Only include facts from the website text. Do NOT invent products or claims.
+- Use markdown formatting: ## for headers, - for bullets, **bold** for key terms.
+- Be specific and detailed. Minimum 400 words.`,
 
-    try {
+      marketResearch: `You are a senior market researcher. Based on the brand data below, write a comprehensive Market Research document in markdown.
+
+${brandContext}
+
+Write the Market Research with these exact sections:
+# ${parsedDna.brandName} – Market Research
+
+## Market Opportunity
+Describe the market this brand operates in, current trends, growth indicators, and why now is a good time for this brand. Include specific data points and trends if inferable from the website context.
+
+## Competitive Landscape
+List 8-10 REAL competitor companies in the same industry/niche. For each, provide 1-2 lines on what they do and how they compare to ${parsedDna.brandName}.
+
+## SEO & GEO Keywords
+List 15-20 high-value search keywords this brand should target, grouped by intent (informational, commercial, transactional).
+
+## Target Audiences on Social
+4-5 distinct audience segments with their platform preferences, what content resonates with them, and how to reach them.
+
+Rules:
+- Competitors must be real, named companies in the same industry — not generic descriptions.
+- Keywords must be realistic and specific to this brand's industry.
+- Use markdown: ## headers, - bullets, **bold** for key names.
+- Minimum 500 words.`,
+
+      strategy: `You are a senior social media strategist. Based on the brand data below, write a detailed Social Media Strategy document in markdown.
+
+${brandContext}
+
+Write the Social Media Strategy with these exact sections:
+# ${parsedDna.brandName} – Social Media Strategy
+
+## Priority Platforms
+Rank and describe the top 3-4 social platforms for this brand. For each: why it's a priority, the audience there, and what content format to use.
+
+## Content Pillars
+Define 4-6 content pillars (themes) for this brand. For each pillar:
+- Name and description
+- Example post ideas (2-3 specific examples)
+- Which audience it speaks to
+
+## Posting Cadence
+Recommended posting frequency per platform in a table or list format.
+
+## Messaging Hierarchy
+The 3-4 core messages ranked by priority — what to lead with, secondary hooks, and supporting proof points.
+
+## Quick Wins
+5-7 immediately actionable tactics the brand can do in the next 30 days to grow engagement and followers.
+
+Rules:
+- Be specific to ${parsedDna.brandName}'s industry, not generic.
+- Reference the brand's actual tone of voice: ${parsedDna.toneOfVoice}.
+- Use markdown: ## headers, - bullets, **bold** for key terms.
+- Minimum 500 words.`,
+    };
+
+    const documents: Record<string, string> = { strategy: "", marketResearch: "", businessProfile: "" };
+
+    async function generateDoc(key: string, docPrompt: string): Promise<string> {
       for (const modelName of MODELS_TO_TRY) {
         try {
-          console.log(`[extract-dna] 📝 Generating docs with: ${modelName}`);
-          const docsResponse = await genAI!.models.generateContent({
+          console.log(`[extract-dna] 📝 Generating ${key} with: ${modelName}`);
+          const res = await genAI!.models.generateContent({
             model: modelName,
-            contents: docsPrompt,
-            config: { responseMimeType: "application/json" },
+            contents: docPrompt,
+            config: { responseMimeType: "text/plain" },
           });
-          const docsText = docsResponse.text || null;
-          if (docsText) {
-            const parsed = JSON.parse(docsText);
-            documents = {
-              strategy: parsed.strategy || "",
-              marketResearch: parsed.marketResearch || "",
-              businessProfile: parsed.businessProfile || "",
-            };
-            console.log(`[extract-dna] ✅ Documents generated with ${modelName}`);
-            break;
+          const text = res.text?.trim() || "";
+          if (text.length > 100) {
+            console.log(`[extract-dna] ✅ ${key} generated (${text.length} chars)`);
+            return text;
           }
-        } catch (docErr: unknown) {
-          const errMsg = docErr instanceof Error ? docErr.message : String(docErr);
-          console.warn(`[extract-dna] ⚠ Doc gen ${modelName} failed:`, errMsg.slice(0, 200));
-          continue;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(`[extract-dna] ⚠ ${key}/${modelName} failed:`, msg.slice(0, 150));
         }
       }
-    } catch {
-      console.warn("[extract-dna] All doc generation failed. Using empty docs.");
+      console.warn(`[extract-dna] ⚠ All models failed for ${key}`);
+      return "";
     }
+
+    // Generate all 3 docs in parallel
+    const [businessProfile, marketResearch, strategy] = await Promise.all([
+      generateDoc("businessProfile", docPrompts.businessProfile),
+      generateDoc("marketResearch", docPrompts.marketResearch),
+      generateDoc("strategy", docPrompts.strategy),
+    ]);
+
+    documents.businessProfile = businessProfile;
+    documents.marketResearch = marketResearch;
+    documents.strategy = strategy;
+
+    console.log(`[extract-dna] 📄 Docs ready — profile:${businessProfile.length} research:${marketResearch.length} strategy:${strategy.length}`);
 
     return NextResponse.json({ dna: parsedDna, documents });
 
