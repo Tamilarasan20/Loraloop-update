@@ -1,117 +1,167 @@
 /**
  * Gemini Smart Model Router
  *
- * Instead of always trying the same fixed fallback chain, each task type
- * is routed to the models best suited for it — by capability, speed, and
- * creativity requirements. All available Gemini models are used across
- * different task types so every model earns its place.
+ * ALL available models from the Google AI Studio dashboard are registered here.
+ * Each task type uses a priority list optimised for:
+ *   1. Highest quota availability (RPM/TPM/RPD)
+ *   2. Best capability for the task
+ *   3. Speed vs quality trade-off
  *
- * Model characteristics (2025):
- *  gemini-2.5-pro        — Most capable, largest context, best reasoning & world knowledge
- *  gemini-2.5-flash      — Fast + high quality, great for structured output & creativity
- *  gemini-2.5-flash-lite — Ultra-fast, lower latency, good for simple tasks
- *  gemini-2.0-flash      — Balanced speed/quality, solid general purpose
- *  gemini-2.0-flash-lite — Fastest, lightest, best for short creative snippets
+ * Dashboard quota (current as of April 2025):
+ *   gemini-3.1-flash-lite  — highest RPM (15), best availability
+ *   gemini-2.5-flash-lite  — 10 RPM
+ *   gemini-2.5-flash       — 5 RPM
+ *   gemini-3.0-flash       — 5 RPM
+ *   gemma-4-27b/31b        — 15 RPM (large capable open models)
+ *   gemma-3-*              — 30 RPM (fastest quota refresh)
+ *   gemini-2.5-pro         — currently 0 quota (included as last resort)
  */
 
 import { GoogleGenAI, type GenerateContentConfig } from "@google/genai";
 
-// ── All available Gemini models ────────────────────────────────────────────────
+// ── All registered models ──────────────────────────────────────────────────────
 export const GEMINI_MODELS = {
-  PRO_25:        "gemini-2.5-pro",
-  FLASH_25:      "gemini-2.5-flash",
-  FLASH_LITE_25: "gemini-2.5-flash-lite",
-  FLASH_20:      "gemini-2.0-flash",
-  FLASH_LITE_20: "gemini-2.0-flash-lite",
+  // ── Gemini 2.5 family ──
+  FLASH_25:       "gemini-2.5-flash",
+  FLASH_LITE_25:  "gemini-2.5-flash-lite",
+  PRO_25:         "gemini-2.5-pro",
+
+  // ── Gemini 2.0 family ──
+  FLASH_20:       "gemini-2.0-flash",
+  FLASH_LITE_20:  "gemini-2.0-flash-lite",
+
+  // ── Gemini 3.x family (newest) ──
+  FLASH_30:       "gemini-3.0-flash",
+  FLASH_LITE_31:  "gemini-3.1-flash-lite",
+  PRO_31:         "gemini-3.1-pro",
+
+  // ── Gemma 4 family (large open models, high RPM) ──
+  GEMMA4_31B:     "gemma-4-31b",
+  GEMMA4_27B:     "gemma-4-27b",
+
+  // ── Gemma 3 family (very high RPM, lighter tasks) ──
+  GEMMA3_27B:     "gemma-3-27b-it",
+  GEMMA3_12B:     "gemma-3-12b-it",
+  GEMMA3_4B:      "gemma-3-4b-it",
+  GEMMA3_2B:      "gemma-3-2b-it",
+  GEMMA3_1B:      "gemma-3-1b-it",
 } as const;
 
 export type GeminiModel = typeof GEMINI_MODELS[keyof typeof GEMINI_MODELS];
 
-// ── Task types → model priority lists ─────────────────────────────────────────
-// First model in the list is tried first. Falls back down the list on failure.
+// ── Task → model priority lists ────────────────────────────────────────────────
+// Models are tried IN ORDER — first success wins.
+// Priority logic: highest RPM quota → then best capability for task.
 export const TASK_MODELS: Record<string, GeminiModel[]> = {
   /**
-   * Brand DNA extraction — needs accurate JSON with real brand data.
-   * 2.5-flash is ideal: fast structured output. 2.0-flash as backup.
+   * Brand DNA extraction — structured JSON output, accuracy matters.
+   * 3.1-flash-lite first (15 RPM), then 2.5-flash (best JSON accuracy).
    */
   "dna-extraction": [
-    GEMINI_MODELS.FLASH_25,
-    GEMINI_MODELS.FLASH_20,
-    GEMINI_MODELS.FLASH_LITE_25,
+    GEMINI_MODELS.FLASH_LITE_31,  // 15 RPM — highest quota
+    GEMINI_MODELS.FLASH_25,       // 5 RPM  — excellent structured output
+    GEMINI_MODELS.FLASH_LITE_25,  // 10 RPM — fast fallback
+    GEMINI_MODELS.FLASH_30,       // 5 RPM  — newer model
+    GEMINI_MODELS.FLASH_20,       // backup
     GEMINI_MODELS.FLASH_LITE_20,
+    GEMINI_MODELS.GEMMA4_27B,
     GEMINI_MODELS.PRO_25,
   ],
 
   /**
-   * Business Profile — detailed brand analysis document.
-   * Needs quality writing and factual accuracy. Start with 2.5-flash.
+   * Business Profile — detailed writing, factual accuracy.
+   * Favour capable models over fastest.
    */
   "business-profile": [
-    GEMINI_MODELS.FLASH_25,
-    GEMINI_MODELS.PRO_25,
+    GEMINI_MODELS.FLASH_25,       // 5 RPM  — quality writing
+    GEMINI_MODELS.FLASH_LITE_31,  // 15 RPM — high availability
+    GEMINI_MODELS.FLASH_30,       // 5 RPM  — newer generation
+    GEMINI_MODELS.GEMMA4_31B,     // 15 RPM — large, capable
+    GEMINI_MODELS.GEMMA4_27B,     // 15 RPM
+    GEMINI_MODELS.FLASH_LITE_25,  // 10 RPM — solid fallback
+    GEMINI_MODELS.PRO_25,         // 0 RPM  — last resort
+    GEMINI_MODELS.PRO_31,
+    GEMINI_MODELS.GEMMA3_27B,
     GEMINI_MODELS.FLASH_20,
-    GEMINI_MODELS.FLASH_LITE_25,
-    GEMINI_MODELS.FLASH_LITE_20,
   ],
 
   /**
-   * Market Research — requires world knowledge for real competitor names,
-   * SEO keywords, industry trends. 2.5-pro first for best knowledge depth.
+   * Market Research — needs real world knowledge for competitor names,
+   * industry trends, SEO keywords. Best large models first.
    */
   "market-research": [
-    GEMINI_MODELS.PRO_25,
-    GEMINI_MODELS.FLASH_25,
+    GEMINI_MODELS.FLASH_25,       // 5 RPM  — strong world knowledge
+    GEMINI_MODELS.FLASH_LITE_31,  // 15 RPM — newest, high quota
+    GEMINI_MODELS.FLASH_30,       // 5 RPM
+    GEMINI_MODELS.GEMMA4_31B,     // 15 RPM — large model
+    GEMINI_MODELS.GEMMA4_27B,     // 15 RPM
+    GEMINI_MODELS.PRO_25,         // 0 RPM  — most knowledge depth
+    GEMINI_MODELS.PRO_31,
+    GEMINI_MODELS.FLASH_LITE_25,  // 10 RPM
+    GEMINI_MODELS.GEMMA3_27B,
     GEMINI_MODELS.FLASH_20,
-    GEMINI_MODELS.FLASH_LITE_25,
-    GEMINI_MODELS.FLASH_LITE_20,
   ],
 
   /**
-   * Social Strategy — creative + strategic. 2.5-flash balances creativity
-   * and speed. 2.0-flash is a solid fallback for strategic thinking.
+   * Social Strategy — creative + strategic thinking.
+   * Balance between capability and quota.
    */
   "social-strategy": [
-    GEMINI_MODELS.FLASH_25,
+    GEMINI_MODELS.FLASH_LITE_31,  // 15 RPM — newest, highest quota
+    GEMINI_MODELS.FLASH_25,       // 5 RPM  — creative quality
+    GEMINI_MODELS.FLASH_30,       // 5 RPM
+    GEMINI_MODELS.FLASH_LITE_25,  // 10 RPM
+    GEMINI_MODELS.GEMMA4_27B,     // 15 RPM — capable for creative
+    GEMINI_MODELS.GEMMA4_31B,     // 15 RPM
+    GEMINI_MODELS.GEMMA3_27B,
     GEMINI_MODELS.FLASH_20,
     GEMINI_MODELS.PRO_25,
-    GEMINI_MODELS.FLASH_LITE_25,
-    GEMINI_MODELS.FLASH_LITE_20,
   ],
 
   /**
-   * Content generation (chat) — conversational, fast responses.
-   * 2.0-flash is the sweet spot. Lite models work well here too.
+   * Content generation (chat) — fast, conversational responses.
+   * Prioritise speed and quota availability.
    */
   "content-generation": [
+    GEMINI_MODELS.FLASH_LITE_31,  // 15 RPM — fastest + most quota
+    GEMINI_MODELS.FLASH_LITE_25,  // 10 RPM — very fast
+    GEMINI_MODELS.FLASH_30,       // 5 RPM  — newer generation
+    GEMINI_MODELS.FLASH_25,       // 5 RPM
+    GEMINI_MODELS.GEMMA3_12B,     // 30 RPM — massive quota for chat
+    GEMINI_MODELS.GEMMA3_27B,     // 30 RPM
+    GEMINI_MODELS.GEMMA4_27B,     // 15 RPM
     GEMINI_MODELS.FLASH_20,
-    GEMINI_MODELS.FLASH_LITE_25,
-    GEMINI_MODELS.FLASH_25,
     GEMINI_MODELS.FLASH_LITE_20,
     GEMINI_MODELS.PRO_25,
   ],
 
   /**
    * Steve visual design briefs — creative JSON with slide copy.
-   * 2.5-flash excels at structured creative output. 2.0-flash backup.
+   * Needs creative capability + structured output.
    */
   "steve-design": [
-    GEMINI_MODELS.FLASH_25,
+    GEMINI_MODELS.FLASH_25,       // 5 RPM  — best creative JSON
+    GEMINI_MODELS.FLASH_LITE_31,  // 15 RPM — high quota
+    GEMINI_MODELS.FLASH_30,       // 5 RPM  — newer
+    GEMINI_MODELS.FLASH_LITE_25,  // 10 RPM
+    GEMINI_MODELS.GEMMA4_31B,     // 15 RPM — large creative model
+    GEMINI_MODELS.GEMMA4_27B,     // 15 RPM
     GEMINI_MODELS.FLASH_20,
-    GEMINI_MODELS.FLASH_LITE_25,
     GEMINI_MODELS.PRO_25,
-    GEMINI_MODELS.FLASH_LITE_20,
   ],
 
   /**
-   * Short creative copy — quick headlines, captions, CTAs.
-   * Lite models are fastest for short outputs.
+   * Short creative copy — headlines, captions, CTAs.
+   * Smallest/fastest models are perfect here.
    */
   "creative-copy": [
-    GEMINI_MODELS.FLASH_LITE_20,
-    GEMINI_MODELS.FLASH_LITE_25,
+    GEMINI_MODELS.GEMMA3_4B,      // 30 RPM — tiny, fast
+    GEMINI_MODELS.GEMMA3_12B,     // 30 RPM
+    GEMINI_MODELS.FLASH_LITE_31,  // 15 RPM
+    GEMINI_MODELS.FLASH_LITE_25,  // 10 RPM
     GEMINI_MODELS.FLASH_20,
+    GEMINI_MODELS.FLASH_LITE_20,
     GEMINI_MODELS.FLASH_25,
-    GEMINI_MODELS.PRO_25,
   ],
 };
 
@@ -121,7 +171,7 @@ export interface GeminiCallOptions {
   prompt: string;
   /** defaults to "text/plain" */
   mimeType?: "text/plain" | "application/json";
-  /** override model order for this call */
+  /** override model order for this specific call */
   modelOverride?: GeminiModel[];
   /** minimum acceptable response length in chars (default 50) */
   minLength?: number;
@@ -163,18 +213,22 @@ export async function callGemini(options: GeminiCallOptions): Promise<GeminiResu
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       lastError = msg;
-      console.warn(`[gemini/${options.taskType}] ${model} failed: ${msg.slice(0, 200)}`);
+      // Skip 0-quota models quickly — don't log noise for quota errors
+      const isQuota = msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("quota");
+      if (!isQuota) {
+        console.warn(`[gemini/${options.taskType}] ${model} failed: ${msg.slice(0, 200)}`);
+      }
     }
   }
 
   // Surface a useful error
-  let userMsg = `All Gemini models failed for task "${options.taskType}"`;
-  if (lastError.includes("API key") || lastError.includes("PERMISSION_DENIED") || lastError.includes("leaked") || lastError.includes("API_KEY_INVALID")) {
-    userMsg = "Gemini API key is invalid or revoked. Get a new key at https://aistudio.google.com/apikey (starts with AIza...)";
+  let userMsg = `All models failed for task "${options.taskType}"`;
+  if (lastError.includes("API key") || lastError.includes("PERMISSION_DENIED") || lastError.includes("API_KEY_INVALID") || lastError.includes("leaked")) {
+    userMsg = "Gemini API key is invalid or revoked. Get a new key at https://aistudio.google.com/apikey (key starts with AIza...)";
   } else if (lastError.includes("429") || lastError.includes("RESOURCE_EXHAUSTED")) {
-    userMsg = "Gemini API rate limit reached. Wait a moment and try again.";
+    userMsg = "All Gemini models are rate-limited. Wait a moment and try again.";
   } else if (lastError.includes("404") || lastError.includes("not found")) {
-    userMsg = "Gemini model not found — model names may have changed.";
+    userMsg = "Gemini model not found. Model names may have changed.";
   }
 
   const error = new Error(userMsg) as Error & { detail: string };
