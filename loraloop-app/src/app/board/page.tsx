@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import BrandBoard from "@/components/BrandBoard";
 import {
   Loader2, FileText, X, Pencil, Trash2, Save, Eye, ChevronRight,
-  BookOpen, BarChart2, Users, AlertTriangle, CheckCircle2
+  BookOpen, BarChart2, Users, AlertTriangle, CheckCircle2, Sparkles, RefreshCw
 } from "lucide-react";
 
 // ─────────────────────────────────────────────
@@ -327,44 +327,103 @@ function DocModal({ meta, content, businessId, onSave, onDelete, onClose }: DocM
   );
 }
 
+// Maps board key → regenerate-doc API docType
+const REGEN_TYPE: Record<DocKey, string> = {
+  businessProfile: "businessProfile",
+  marketResearch: "marketResearch",
+  strategy: "socialStrategy",
+};
+
 // ─────────────────────────────────────────────
 // Document file card
 // ─────────────────────────────────────────────
 interface DocCardProps {
   meta: DocMeta;
   content: string;
+  businessId: string;
   onOpen: () => void;
   onDelete: () => void;
+  onRegenerate: (key: DocKey, newContent: string) => void;
 }
 
-function DocCard({ meta, content, onOpen, onDelete }: DocCardProps) {
+function DocCard({ meta, content, businessId, onOpen, onDelete, onRegenerate }: DocCardProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenError, setRegenError] = useState("");
   const hasContent = content && content.trim() && !content.startsWith('No ');
   const wc = wordCount(content);
 
+  const handleRegenerate = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRegenerating(true);
+    setRegenError("");
+    try {
+      const res = await fetch("/api/regenerate-doc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId, docType: REGEN_TYPE[meta.key] }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Generation failed");
+      onRegenerate(meta.key, data.content);
+    } catch (err: any) {
+      setRegenError(err.message || "Failed");
+      setTimeout(() => setRegenError(""), 4000);
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
   return (
-    <div className="flex items-center gap-4 bg-[#FAFBFC] border border-[#F4F4F5] hover:border-[#E5E7EB] hover:shadow-sm transition-all rounded-2xl px-5 py-4 group">
+    <div className={`flex items-start gap-4 border transition-all rounded-2xl px-5 py-4 group ${
+      !hasContent
+        ? "bg-[#FFFBEB] border-[#FDE68A] hover:border-[#F59E0B] hover:shadow-sm"
+        : "bg-[#FAFBFC] border-[#F4F4F5] hover:border-[#E5E7EB] hover:shadow-sm"
+    }`}>
       {/* Icon */}
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105" style={{ backgroundColor: meta.bgColor }}>
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 mt-0.5" style={{ backgroundColor: meta.bgColor }}>
         <meta.Icon style={{ color: meta.color }} size={18} />
       </div>
 
       {/* Info */}
-      <div className="flex-1 min-w-0 cursor-pointer" onClick={onOpen}>
-        <div className="flex items-center gap-2">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 cursor-pointer" onClick={onOpen}>
           <span className="text-[14px] font-semibold text-[#111111] group-hover:text-[#2563EB] transition-colors">{meta.label}</span>
           {!hasContent && (
-            <span className="text-[11px] font-medium text-[#F59E0B] bg-[#FEF9C3] px-2 py-0.5 rounded-full">Empty</span>
+            <span className="text-[11px] font-medium text-[#F59E0B] bg-[#FEF9C3] px-2 py-0.5 rounded-full border border-[#FDE68A]">Empty</span>
+          )}
+          {hasContent && (
+            <span className="text-[11px] font-medium text-[#15803D] bg-[#DCFCE7] px-2 py-0.5 rounded-full">
+              {wc.toLocaleString()} words
+            </span>
           )}
         </div>
         <p className="text-[12px] text-[#A1A1AA] mt-0.5 truncate">{meta.description}</p>
-        {hasContent && (
-          <p className="text-[11px] text-[#A1A1AA] mt-1">{wc.toLocaleString()} words</p>
+
+        {/* Empty state CTA */}
+        {!hasContent && (
+          <div className="mt-3">
+            {regenError ? (
+              <p className="text-[12px] text-red-500 font-medium">{regenError}</p>
+            ) : (
+              <button
+                onClick={handleRegenerate}
+                disabled={regenerating}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-semibold bg-[#F59E0B] text-white hover:bg-[#D97706] disabled:opacity-60 transition-colors shadow-sm"
+              >
+                {regenerating ? (
+                  <><Loader2 className="w-3 h-3 animate-spin" /> Generating…</>
+                ) : (
+                  <><Sparkles className="w-3 h-3" /> Generate with AI</>
+                )}
+              </button>
+            )}
+          </div>
         )}
       </div>
 
-      {/* Actions */}
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Actions (visible on hover) */}
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
         <button
           onClick={onOpen}
           className="p-2 rounded-full text-[#71717A] hover:text-[#2563EB] hover:bg-[#EEF2FF] transition-colors"
@@ -372,6 +431,16 @@ function DocCard({ meta, content, onOpen, onDelete }: DocCardProps) {
         >
           <ChevronRight className="w-4 h-4" />
         </button>
+        {hasContent && (
+          <button
+            onClick={handleRegenerate}
+            disabled={regenerating}
+            className="p-2 rounded-full text-[#71717A] hover:text-[#7C3AED] hover:bg-[#F5F3FF] transition-colors disabled:opacity-50"
+            title="Regenerate with AI"
+          >
+            {regenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          </button>
+        )}
         {!confirmDelete ? (
           <button
             onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
@@ -548,8 +617,10 @@ function BoardContent() {
                     key={meta.key}
                     meta={meta}
                     content={docs[meta.key]}
+                    businessId={businessId!}
                     onOpen={() => setActiveDoc(meta)}
                     onDelete={() => handleDocDeleteFromCard(meta.key, meta.dbField)}
+                    onRegenerate={(key, newContent) => setDocs(prev => prev ? { ...prev, [key]: newContent } : prev)}
                   />
                 ))}
               </div>
