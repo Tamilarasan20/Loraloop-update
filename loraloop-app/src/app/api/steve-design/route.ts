@@ -1,16 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
-import { GoogleGenAI } from "@google/genai";
+import { callGemini } from "@/lib/gemini";
 
 export const maxDuration = 60;
-
-const MODELS = [
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-lite",
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-lite",
-  "gemini-2.5-pro",
-];
 
 export async function POST(req: Request) {
   try {
@@ -19,13 +11,6 @@ export async function POST(req: Request) {
     if (!businessId || !prompt) {
       return NextResponse.json({ error: "businessId and prompt are required" }, { status: 400 });
     }
-
-    const apiKey = process.env.GEMINI_API_KEY || "";
-    if (!apiKey) {
-      return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
-    }
-
-    const genAI = new GoogleGenAI({ apiKey });
 
     const supabase = getServiceSupabase();
     const { data: business, error } = await supabase
@@ -97,16 +82,16 @@ JSON structure:
       "role": "hook|value|story|proof|cta",
       "headline": "SHORT PUNCHY HEADLINE IN CAPS",
       "subhead": "Supporting line that expands the headline",
-      "body": "1–2 sentence body copy or bullet points (use \\n for line breaks)",
+      "body": "1–2 sentence body copy (use \\n for line breaks)",
       "cta": "Call-to-action text",
-      "visualDirection": "Detailed description of the background visual/illustration/photo that should appear",
+      "visualDirection": "Detailed description of the background visual/photo",
       "layout": "centered|left-aligned|split|overlay|top-bottom",
-      "backgroundColor": "#hex — use brand color or complementary",
+      "backgroundColor": "#hex — brand color or complementary",
       "textColor": "#hex — high-contrast against background",
       "accentColor": "#hex — highlight color for CTA or keywords",
       "overlayOpacity": 0.0,
       "emojiAccent": "single relevant emoji or empty string",
-      "designNotes": "Brief note for the designer on mood/feel"
+      "designNotes": "Brief mood/feel note for the designer"
     }
   ]
 }
@@ -121,7 +106,9 @@ Rules:
 - Platform is ${platformName} (${spec.ratio} ratio, ${spec.width}×${spec.height}px)
 - Make it scroll-stopping and platform-native`;
 
-    const userPrompt = `BRAND KNOWLEDGE:
+    const fullPrompt = `${systemPrompt}
+
+BRAND KNOWLEDGE:
 ${brandContext}
 
 USER REQUEST:
@@ -129,52 +116,24 @@ ${prompt}
 
 Generate ${numSlides} slide(s) for ${platformName} ${format} post.`;
 
-    let result = "";
-    let lastError = "";
-
-    for (const model of MODELS) {
-      try {
-        console.log(`[steve-design] Trying model: ${model}`);
-        const response = await genAI.models.generateContent({
-          model,
-          contents: [
-            { role: "user", parts: [{ text: systemPrompt + "\n\n" + userPrompt }] },
-          ],
-          config: { responseMimeType: "text/plain" },
-        });
-        result = response.text?.trim() || "";
-        if (result) {
-          console.log(`[steve-design] ✅ Got design brief (${result.length} chars) from ${model}`);
-          break;
-        }
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        lastError = msg;
-        console.warn(`[steve-design] ${model} failed:`, msg.slice(0, 200));
-      }
-    }
-
-    if (!result) {
-      let userMsg = "Failed to generate design";
-      if (lastError.includes("API key") || lastError.includes("PERMISSION_DENIED") || lastError.includes("leaked")) {
-        userMsg = "Gemini API key is invalid or revoked. Update GEMINI_API_KEY in .env.local";
-      } else if (lastError.includes("429") || lastError.includes("RESOURCE_EXHAUSTED")) {
-        userMsg = "Gemini API rate limit. Please wait and try again.";
-      }
-      return NextResponse.json({ error: userMsg, detail: lastError.slice(0, 300) }, { status: 500 });
-    }
+    // Steve design uses gemini-2.5-flash first — creative + structured JSON
+    const result = await callGemini({
+      taskType: "steve-design",
+      prompt: fullPrompt,
+      minLength: 100,
+    });
 
     // Parse JSON — strip markdown fences if present
     let design: any;
     try {
-      const cleaned = result
+      const cleaned = result.text
         .replace(/^```(?:json)?\s*/i, "")
         .replace(/\s*```\s*$/, "")
         .trim();
       design = JSON.parse(cleaned);
     } catch {
-      console.error("[steve-design] JSON parse failed, raw:", result.slice(0, 500));
-      return NextResponse.json({ error: "Design generation returned malformed JSON", raw: result.slice(0, 500) }, { status: 500 });
+      console.error("[steve-design] JSON parse failed, raw:", result.text.slice(0, 500));
+      return NextResponse.json({ error: "Design generation returned malformed JSON", raw: result.text.slice(0, 500) }, { status: 500 });
     }
 
     // Attach brand meta for the frontend renderer
@@ -193,6 +152,6 @@ Generate ${numSlides} slide(s) for ${platformName} ${format} post.`;
     return NextResponse.json({ design });
   } catch (err: any) {
     console.error("[steve-design] Error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message, detail: err.detail || "" }, { status: 500 });
   }
 }

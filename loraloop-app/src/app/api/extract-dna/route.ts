@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { chromium, Browser, Page } from "playwright";
-import { GoogleGenAI } from "@google/genai";
+import { callGemini } from "@/lib/gemini";
 
 // ────────────────────────────────────────────────────────────────
 // UTILITY
@@ -425,10 +425,6 @@ async function scrapePage(page: Page) {
 // ────────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
-  let genAI: GoogleGenAI | null = null;
-  if (apiKey) genAI = new GoogleGenAI({ apiKey });
-
   let browser: Browser | null = null;
 
   try {
@@ -652,25 +648,11 @@ export async function POST(req: Request) {
     // PHASE 2 — GEMINI LLM ENRICHMENT
     // ══════════════════════════════════════════════════════════
 
-    if (!apiKey || !genAI) {
-      console.warn("[extract-dna] No API key. Returning raw scrape data.");
-      return NextResponse.json({
-        dna: {
-          brandName: pageTitle.split("|")[0].split("-")[0].split("—")[0].trim() || "Unknown",
-          logoUrl: extractedLogo,
-          colors: {
-            primary: extractedColors[0] || "#333", secondary: extractedColors[1] || "#666",
-            background: "#fff", textHighContrast: "#000", accent: extractedColors[2] || "#0066ff",
-          },
-          typography: { headingFont: extractedFonts[0] || "Inter", bodyFont: extractedFonts[1] || "Inter" },
-          tagline: "", brandValue: "", brandAesthetic: "", toneOfVoice: "",
-          businessOverview: textSample.slice(0, 300), images: extractedImages,
-        },
-      });
-    }
+    // ══════════════════════════════════════════════════════════
+    // PHASE 2 — GEMINI DNA EXTRACTION (smart model routing)
+    // ══════════════════════════════════════════════════════════
 
-    // ── DNA prompt ──
-    const prompt = `You are an expert Brand Analyst and designer. Analyze this website: ${url}
+    const dnaPrompt = `You are an expert Brand Analyst and designer. Analyze this website: ${url}
 
 SCRAPED DATA:
 - Page Title: "${pageTitle}"
@@ -704,70 +686,45 @@ YOUR TASK: Return ONLY a valid JSON object (no markdown, no explanation, no code
 
 STRICT REQUIREMENTS:
 1. brandName MUST be the real brand name from the website, NOT the domain name.
-2. Map the scraped hex colors to the semantic color roles intelligently. Don't just copy them in order.
-3. tagline should be extracted from the hero section text if possible. If none exists, write an accurate one.
-4. All fields MUST be filled with real, accurate data based on the website content. NO placeholder or generic text.
-5. businessOverview must describe the ACTUAL products/services mentioned on the website.
-6. If extracted fonts are system fonts like Arial/Helvetica, suggest the closest Google Font equivalent.
+2. Map the scraped hex colors to the semantic color roles intelligently.
+3. tagline should be extracted from the hero section text if possible.
+4. All fields MUST be filled with real, accurate data. NO placeholder or generic text.
+5. businessOverview must describe the ACTUAL products/services mentioned.
+6. If extracted fonts are system fonts, suggest the closest Google Font equivalent.
 7. Return ONLY the JSON object. No other text.`;
 
-    // Current Gemini models (2025) — 1.5 family is deprecated and returns 404
-    const MODELS_TO_TRY = [
-      "gemini-2.5-flash",
-      "gemini-2.5-flash-lite",
-      "gemini-2.0-flash",
-      "gemini-2.0-flash-lite",
-      "gemini-2.5-pro",
-    ];
-    let aiText: string | null = null;
-
-    for (const modelName of MODELS_TO_TRY) {
-      try {
-        console.log(`[extract-dna] 🤖 Trying model: ${modelName}`);
-        const response = await genAI!.models.generateContent({
-          model: modelName,
-          contents: prompt,
-          config: { responseMimeType: "application/json" },
-        });
-        aiText = response.text || null;
-        if (aiText) { console.log(`[extract-dna] ✅ DNA response from ${modelName}`); break; }
-      } catch (geminiErr: unknown) {
-        const errMsg = geminiErr instanceof Error ? geminiErr.message : String(geminiErr);
-        console.warn(`[extract-dna] ⚠ ${modelName} failed:`, errMsg.slice(0, 200));
-        continue;
-      }
-    }
-
-    if (!aiText) {
-      console.warn("[extract-dna] All models failed. Returning raw scrape.");
-      return NextResponse.json({
-        dna: {
-          brandName: pageTitle.split("|")[0].split("-")[0].trim() || "Unknown",
-          logoUrl: extractedLogo,
-          colors: { primary: extractedColors[0] || "#333", secondary: extractedColors[1] || "#666", background: "#fff", textHighContrast: "#000", accent: extractedColors[2] || "#0066ff" },
-          typography: { headingFont: extractedFonts[0] || "Inter", bodyFont: extractedFonts[1] || "Inter" },
-          tagline: "", brandValue: "", brandAesthetic: "", toneOfVoice: "",
-          businessOverview: textSample.slice(0, 300), images: extractedImages,
-        },
-      });
-    }
-
-    let parsedDna;
+    let parsedDna: any;
     try {
-      parsedDna = JSON.parse(aiText);
-    } catch {
-      console.error("[extract-dna] Invalid JSON from Gemini:", aiText.slice(0, 300));
-      throw new Error("Gemini returned malformed data. Please try again.");
+      // DNA extraction — uses gemini-2.5-flash first (fast + accurate JSON)
+      const dnaResult = await callGemini({
+        taskType: "dna-extraction",
+        prompt: dnaPrompt,
+        mimeType: "application/json",
+        minLength: 50,
+      });
+      parsedDna = JSON.parse(dnaResult.text);
+    } catch (err: any) {
+      console.warn("[extract-dna] DNA Gemini call failed, using raw scrape fallback:", err.message);
+      parsedDna = {
+        brandName: pageTitle.split("|")[0].split("-")[0].split("—")[0].trim() || "Unknown",
+        logoUrl: extractedLogo,
+        colors: {
+          primary: extractedColors[0] || "#333", secondary: extractedColors[1] || "#666",
+          background: "#fff", textHighContrast: "#000", accent: extractedColors[2] || "#0066ff",
+        },
+        typography: { headingFont: extractedFonts[0] || "Inter", bodyFont: extractedFonts[1] || "Inter" },
+        tagline: "", brandValue: "", brandAesthetic: "", toneOfVoice: "",
+        businessOverview: textSample.slice(0, 300), images: [],
+      };
     }
 
     // Inject scraped images & preserve logo
     parsedDna.images = [...new Set(extractedImages)];
     if (!parsedDna.logoUrl && extractedLogo) parsedDna.logoUrl = extractedLogo;
-
     console.log("[extract-dna] ✅ Brand DNA complete:", parsedDna.brandName);
 
     // ══════════════════════════════════════════════════════════
-    // PHASE 3 — DOCUMENT GENERATION (3 separate plain-text calls)
+    // PHASE 3 — DOCUMENT GENERATION (smart model routing per doc type)
     // ══════════════════════════════════════════════════════════
 
     const brandContext = `
@@ -781,7 +738,7 @@ Tone of Voice: ${parsedDna.toneOfVoice}
 Website Text: """${textSample.slice(0, 3000)}"""
 `.trim();
 
-    const docPrompts: Record<string, string> = {
+    const docPrompts = {
       businessProfile: `You are a senior brand analyst. Using ONLY information from the website text below, write a detailed Business Profile document in markdown.
 
 ${brandContext}
@@ -790,26 +747,23 @@ Write the Business Profile with these exact sections:
 # ${parsedDna.brandName} – Business Profile
 
 ## Overview
-2-3 paragraphs covering what the business does, their mission, founding story if mentioned, and market positioning.
+2-3 paragraphs: what the business does, mission, founding story if mentioned, market positioning.
 
-## Products
-List every product, service or offering mentioned on the website with a short description of each.
+## Products & Services
+List every product or service mentioned with a short description of each.
 
 ## Key Selling Points
-5-8 bullet points of the most compelling reasons to choose this brand (from website content).
+5-8 bullet points of the most compelling reasons to choose this brand.
 
 ## Retail Presence
-Where the products are sold — online store, retailers, marketplaces, physical locations mentioned on the site.
+Where products are sold — online store, retailers, marketplaces, physical locations.
 
 ## Target Audience
-Who this brand serves — demographics, psychographics, interests, based on the website tone and content.
+Demographics, psychographics, interests based on the website tone and content.
 
-Rules:
-- Only include facts from the website text. Do NOT invent products or claims.
-- Use markdown formatting: ## for headers, - for bullets, **bold** for key terms.
-- Be specific and detailed. Minimum 400 words.`,
+Rules: Only facts from website text. Use ## headers, - bullets, **bold** key terms. Min 400 words.`,
 
-      marketResearch: `You are a senior market researcher. Based on the brand data below, write a comprehensive Market Research document in markdown.
+      marketResearch: `You are a senior market researcher. Write a comprehensive Market Research document in markdown.
 
 ${brandContext}
 
@@ -817,24 +771,20 @@ Write the Market Research with these exact sections:
 # ${parsedDna.brandName} – Market Research
 
 ## Market Opportunity
-Describe the market this brand operates in, current trends, growth indicators, and why now is a good time for this brand. Include specific data points and trends if inferable from the website context.
+The market this brand operates in, current trends, growth indicators, why now is a good time.
 
 ## Competitive Landscape
-List 8-10 REAL competitor companies in the same industry/niche. For each, provide 1-2 lines on what they do and how they compare to ${parsedDna.brandName}.
+List 8-10 REAL named competitor companies. For each, 1-2 lines on what they do and how they compare.
 
 ## SEO & GEO Keywords
-List 15-20 high-value search keywords this brand should target, grouped by intent (informational, commercial, transactional).
+15-20 high-value search keywords grouped by intent (informational, commercial, transactional).
 
 ## Target Audiences on Social
-4-5 distinct audience segments with their platform preferences, what content resonates with them, and how to reach them.
+4-5 distinct audience segments — platform preferences, what content resonates, how to reach them.
 
-Rules:
-- Competitors must be real, named companies in the same industry — not generic descriptions.
-- Keywords must be realistic and specific to this brand's industry.
-- Use markdown: ## headers, - bullets, **bold** for key names.
-- Minimum 500 words.`,
+Rules: Real named competitors only. Use ## headers, - bullets, **bold** key names. Min 500 words.`,
 
-      strategy: `You are a senior social media strategist. Based on the brand data below, write a detailed Social Media Strategy document in markdown.
+      strategy: `You are a senior social media strategist. Write a detailed Social Media Strategy document in markdown.
 
 ${brandContext}
 
@@ -842,69 +792,36 @@ Write the Social Media Strategy with these exact sections:
 # ${parsedDna.brandName} – Social Media Strategy
 
 ## Priority Platforms
-Rank and describe the top 3-4 social platforms for this brand. For each: why it's a priority, the audience there, and what content format to use.
+Top 3-4 platforms — why each is a priority, audience, and content format.
 
 ## Content Pillars
-Define 4-6 content pillars (themes) for this brand. For each pillar:
-- Name and description
-- Example post ideas (2-3 specific examples)
-- Which audience it speaks to
+4-6 content themes with name, description, 2-3 example post ideas each.
 
 ## Posting Cadence
-Recommended posting frequency per platform in a table or list format.
+Recommended posting frequency per platform.
 
 ## Messaging Hierarchy
-The 3-4 core messages ranked by priority — what to lead with, secondary hooks, and supporting proof points.
+3-4 core messages ranked by priority — lead message, secondary hooks, proof points.
 
 ## Quick Wins
-5-7 immediately actionable tactics the brand can do in the next 30 days to grow engagement and followers.
+5-7 immediately actionable tactics for the next 30 days.
 
-Rules:
-- Be specific to ${parsedDna.brandName}'s industry, not generic.
-- Reference the brand's actual tone of voice: ${parsedDna.toneOfVoice}.
-- Use markdown: ## headers, - bullets, **bold** for key terms.
-- Minimum 500 words.`,
+Rules: Specific to ${parsedDna.brandName}'s industry. Tone of voice: ${parsedDna.toneOfVoice}. Min 500 words.`,
     };
 
-    const documents: Record<string, string> = { strategy: "", marketResearch: "", businessProfile: "" };
-
-    async function generateDoc(key: string, docPrompt: string): Promise<string> {
-      for (const modelName of MODELS_TO_TRY) {
-        try {
-          console.log(`[extract-dna] 📝 Generating ${key} with: ${modelName}`);
-          const res = await genAI!.models.generateContent({
-            model: modelName,
-            contents: docPrompt,
-            config: { responseMimeType: "text/plain" },
-          });
-          const text = res.text?.trim() || "";
-          if (text.length > 100) {
-            console.log(`[extract-dna] ✅ ${key} generated (${text.length} chars)`);
-            return text;
-          }
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.warn(`[extract-dna] ⚠ ${key}/${modelName} failed:`, msg.slice(0, 150));
-        }
-      }
-      console.warn(`[extract-dna] ⚠ All models failed for ${key}`);
-      return "";
-    }
-
-    // Generate all 3 docs in parallel
+    // Each doc type uses its own optimal model order via smart router
     const [businessProfile, marketResearch, strategy] = await Promise.all([
-      generateDoc("businessProfile", docPrompts.businessProfile),
-      generateDoc("marketResearch", docPrompts.marketResearch),
-      generateDoc("strategy", docPrompts.strategy),
+      callGemini({ taskType: "business-profile", prompt: docPrompts.businessProfile, minLength: 300 })
+        .then(r => r.text).catch(() => ""),
+      callGemini({ taskType: "market-research", prompt: docPrompts.marketResearch, minLength: 300 })
+        .then(r => r.text).catch(() => ""),
+      callGemini({ taskType: "social-strategy", prompt: docPrompts.strategy, minLength: 300 })
+        .then(r => r.text).catch(() => ""),
     ]);
 
-    documents.businessProfile = businessProfile;
-    documents.marketResearch = marketResearch;
-    documents.strategy = strategy;
+    console.log(`[extract-dna] 📄 Docs — profile:${businessProfile.length} research:${marketResearch.length} strategy:${strategy.length}`);
 
-    console.log(`[extract-dna] 📄 Docs ready — profile:${businessProfile.length} research:${marketResearch.length} strategy:${strategy.length}`);
-
-    return NextResponse.json({ dna: parsedDna, documents });
+    return NextResponse.json({ dna: parsedDna, documents: { businessProfile, marketResearch, strategy } });
 
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "An unexpected server error occurred.";

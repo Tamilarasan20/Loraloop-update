@@ -1,14 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
-import { GoogleGenAI } from "@google/genai";
-
-const MODELS = [
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-lite",
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-lite",
-  "gemini-2.5-pro",
-];
+import { callGemini } from "@/lib/gemini";
 
 const VALID_DOCS = ["businessProfile", "marketResearch", "socialStrategy"] as const;
 type DocType = typeof VALID_DOCS[number];
@@ -217,14 +209,7 @@ export async function POST(req: Request) {
     const brandName = business.business_name || "this brand";
     const url = business.website || "";
 
-    // Try Gemini first
-    const apiKey = process.env.GEMINI_API_KEY || "";
-    let content = "";
-
-    if (apiKey) {
-      const genAI = new GoogleGenAI({ apiKey });
-
-      const brandContext = `
+    const brandContext = `
 Brand: ${brandName}
 Website: ${url}
 Overview: ${enriched.businessOverview || "N/A"}
@@ -234,13 +219,15 @@ Brand Aesthetic: ${enriched.brandAesthetic || "N/A"}
 Tone of Voice: ${enriched.brandTone || "N/A"}
 Colors: ${(guidelines.colors || []).map((c: any) => `${c.name}: ${c.hex}`).join(", ") || "N/A"}
 Typography: ${(guidelines.typography || []).map((t: any) => `${t.usage}: ${t.family}`).join(", ") || "N/A"}
-Strategy: ${(business.social_strategy || "").slice(0, 400)}
-Research: ${(business.market_research || "").slice(0, 400)}
-Profile: ${(business.business_profile || "").slice(0, 400)}
+Existing Strategy: ${(business.social_strategy || "").slice(0, 400)}
+Existing Research: ${(business.market_research || "").slice(0, 400)}
+Existing Profile: ${(business.business_profile || "").slice(0, 400)}
 `.trim();
 
-      const PROMPTS: Record<DocType, string> = {
-        businessProfile: `You are a senior brand analyst. Write a detailed Business Profile document in markdown for ${brandName}.
+    const PROMPTS: Record<DocType, { taskType: string; prompt: string }> = {
+      businessProfile: {
+        taskType: "business-profile",
+        prompt: `You are a senior brand analyst. Write a detailed Business Profile document in markdown for ${brandName}.
 
 BRAND DATA:
 ${brandContext}
@@ -254,8 +241,10 @@ Write the Business Profile with these sections:
 ## Brand Positioning
 
 Rules: Use ## headers, - bullets, **bold** key terms. Min 400 words. Only facts from brand data.`,
-
-        marketResearch: `You are a senior market researcher. Write a Market Research document in markdown for ${brandName}.
+      },
+      marketResearch: {
+        taskType: "market-research",
+        prompt: `You are a senior market researcher. Write a Market Research document in markdown for ${brandName}.
 
 BRAND DATA:
 ${brandContext}
@@ -269,8 +258,10 @@ Write the Market Research with these sections:
 ## Opportunities & Gaps
 
 Rules: Real named competitors only. Use ## headers, - bullets. Min 500 words.`,
-
-        socialStrategy: `You are a senior social media strategist. Write a Social Media Strategy in markdown for ${brandName}.
+      },
+      socialStrategy: {
+        taskType: "social-strategy",
+        prompt: `You are a senior social media strategist. Write a Social Media Strategy in markdown for ${brandName}.
 
 BRAND DATA:
 ${brandContext}
@@ -285,32 +276,27 @@ Write the Social Media Strategy with these sections:
 ## Brand Voice Guide
 
 Rules: Specific to ${brandName}'s industry and tone. Min 500 words.`,
-      };
+      },
+    };
 
-      for (const model of MODELS) {
-        try {
-          console.log(`[regenerate-doc] ${docType} with ${model}`);
-          const response = await genAI.models.generateContent({
-            model,
-            contents: PROMPTS[docType as DocType],
-            config: { responseMimeType: "text/plain" },
-          });
-          const text = response.text?.trim() || "";
-          if (text.length > 100) {
-            content = text;
-            console.log(`[regenerate-doc] ✅ ${docType} via Gemini (${content.length} chars)`);
-            break;
-          }
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.warn(`[regenerate-doc] ${model} failed:`, msg.slice(0, 150));
-        }
-      }
+    const { taskType, prompt: docPrompt } = PROMPTS[docType as DocType];
+
+    // Try Gemini with smart model routing; fall back to template on failure
+    let content = "";
+    try {
+      const result = await callGemini({
+        taskType,
+        prompt: docPrompt,
+        minLength: 200,
+      });
+      content = result.text;
+      console.log(`[regenerate-doc] ✅ ${docType} via ${result.model} (${content.length} chars)`);
+    } catch (err: any) {
+      console.log(`[regenerate-doc] Gemini failed — using knowledge base template for ${docType}:`, err.message);
     }
 
     // Always fall back to template if Gemini didn't produce content
     if (!content) {
-      console.log(`[regenerate-doc] Gemini unavailable — using knowledge base template for ${docType}`);
       const templates = buildTemplateDocs(business);
       content = templates[docType as DocType];
     }

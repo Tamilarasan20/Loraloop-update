@@ -1,29 +1,15 @@
 import { NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase";
-import { GoogleGenAI } from "@google/genai";
+import { callGemini } from "@/lib/gemini";
 
 export async function POST(req: Request) {
   try {
     const { businessId, prompt } = await req.json();
 
     if (!businessId || !prompt) {
-      return NextResponse.json(
-        { error: "businessId and prompt are required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "businessId and prompt are required" }, { status: 400 });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY || "";
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "GEMINI_API_KEY not configured" },
-        { status: 500 }
-      );
-    }
-
-    const genAI = new GoogleGenAI({ apiKey });
-
-    // Fetch business data
     const supabase = getServiceSupabase();
     const { data: business, error } = await supabase
       .from("businesses")
@@ -35,7 +21,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Business not found" }, { status: 404 });
     }
 
-    // Build context from knowledge base
     const enriched = business.enriched_data || {};
     const guidelines = business.brand_guidelines || {};
     const docs = {
@@ -78,53 +63,19 @@ ${prompt}
 
 Generate creative, actionable, and specific ideas that align with the brand's values, aesthetic, and tone of voice. Be practical and implementable.`;
 
-    // Current Gemini models (2025) — 1.5 family is deprecated and returns 404
-    const MODELS = [
-      "gemini-2.5-flash",
-      "gemini-2.5-flash-lite",
-      "gemini-2.0-flash",
-      "gemini-2.0-flash-lite",
-      "gemini-2.5-pro",
-    ];
-    let content = "";
-    let lastError = "";
+    // Content generation uses gemini-2.0-flash first — fast & conversational
+    const result = await callGemini({
+      taskType: "content-generation",
+      prompt: fullPrompt,
+      minLength: 50,
+    });
 
-    for (const model of MODELS) {
-      try {
-        console.log(`[generate-content] Using model: ${model}`);
-        const response = await genAI.models.generateContent({
-          model,
-          contents: fullPrompt,
-          config: { responseMimeType: "text/plain" },
-        });
-        content = response.text?.trim() || "";
-        if (content) {
-          console.log(`[generate-content] ✅ Generated content (${content.length} chars)`);
-          break;
-        }
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        lastError = msg;
-        console.warn(`[generate-content] ${model} failed:`, msg.slice(0, 250));
-      }
-    }
-
-    if (!content) {
-      // Surface a useful error for common cases
-      let userMsg = "Failed to generate content";
-      if (lastError.includes("API key") || lastError.includes("API_KEY_INVALID") || lastError.includes("leaked") || lastError.includes("PERMISSION_DENIED")) {
-        userMsg = "Gemini API key is invalid or revoked. Generate a new key at https://aistudio.google.com/apikey and update .env.local";
-      } else if (lastError.includes("429") || lastError.includes("quota") || lastError.includes("RESOURCE_EXHAUSTED")) {
-        userMsg = "Gemini API rate limit exceeded. Please wait a moment and try again.";
-      } else if (lastError.includes("404") || lastError.includes("not found")) {
-        userMsg = "All Gemini models returned 404. The model names may be deprecated.";
-      }
-      return NextResponse.json({ error: userMsg, detail: lastError.slice(0, 300) }, { status: 500 });
-    }
-
-    return NextResponse.json({ content });
+    return NextResponse.json({ content: result.text });
   } catch (err: any) {
     console.error("[generate-content] Error:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const userMsg = err.message?.includes("API key") || err.message?.includes("revoked")
+      ? err.message
+      : err.message || "Failed to generate content";
+    return NextResponse.json({ error: userMsg, detail: err.detail || "" }, { status: 500 });
   }
 }
