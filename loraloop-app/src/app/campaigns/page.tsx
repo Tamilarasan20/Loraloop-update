@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter } from "next/navigation";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { Loader2, Send, Zap, TrendingUp, FileText, Image as ImageIcon } from "lucide-react";
 
 interface Message {
@@ -35,7 +35,7 @@ const QUICK_ACTIONS = [
   },
 ];
 
-export default function CampaignsPage() {
+function CampaignsPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const businessId = searchParams.get("id");
@@ -226,5 +226,19 @@ export default function CampaignsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function CampaignsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex-1 min-h-screen bg-[#FAFBFC] flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-[#3B82F6]" />
+        </div>
+      }
+    >
+      <CampaignsPageInner />
+    </Suspense>
   );
 }

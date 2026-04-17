@@ -1,8 +1,8 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Home, Inbox, Zap, ChevronDown } from "lucide-react";
+import { Home, Inbox, Zap, ChevronDown, Wand2 } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Home", icon: Home },
@@ -12,6 +12,8 @@ const NAV_ITEMS = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const businessId = searchParams.get("id");
 
   // Show sidebar on all routes in the new design
   return (
@@ -69,11 +71,17 @@ export default function Sidebar() {
           );
         })}
 
-        {/* Lora Knowledge Base Active Item */}
+        {/* APPS section */}
         <div className="mt-2 text-[12px] font-bold text-[#A1A1AA] uppercase tracking-wider px-4 mb-1">APPS</div>
+
+        {/* Lora Knowledge Base */}
         <Link
            href="/"
-           className={`flex items-center gap-3.5 px-4 py-3 rounded-xl transition-colors font-semibold text-[14px] bg-[#2563EB] text-white shadow-md shadow-blue-500/20`}
+           className={`flex items-center gap-3.5 px-4 py-3 rounded-xl transition-colors font-semibold text-[14px] ${
+             pathname === "/" || pathname.startsWith("/board") || pathname.startsWith("/loading") || pathname.startsWith("/campaigns")
+               ? "bg-[#2563EB] text-white shadow-md shadow-blue-500/20"
+               : "text-[#3F3F46] hover:text-[#111111] hover:bg-[#F4F4F5]"
+           }`}
          >
            <div className="flex items-center justify-center opacity-90">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -83,6 +91,19 @@ export default function Sidebar() {
                 </svg>
            </div>
            <span className="whitespace-nowrap">Lora Knowledge Base</span>
+        </Link>
+
+        {/* Steve — AI Visual Designer */}
+        <Link
+           href={businessId ? `/steve?id=${businessId}` : "/"}
+           className={`flex items-center gap-3.5 px-4 py-3 rounded-xl transition-colors font-semibold text-[14px] ${
+             pathname.startsWith("/steve")
+               ? "bg-gradient-to-r from-[#7C3AED] to-[#DB2777] text-white shadow-md shadow-purple-500/20"
+               : "text-[#3F3F46] hover:text-[#111111] hover:bg-[#F4F4F5]"
+           }`}
+         >
+           <Wand2 className="w-[18px] h-[18px] shrink-0 opacity-90" strokeWidth={2.5} />
+           <span className="whitespace-nowrap">Steve · Visual Designer</span>
         </Link>
       </nav>
 
