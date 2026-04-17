@@ -327,13 +327,6 @@ function DocModal({ meta, content, businessId, onSave, onDelete, onClose }: DocM
   );
 }
 
-// Maps board key → regenerate-doc API docType
-const REGEN_TYPE: Record<DocKey, string> = {
-  businessProfile: "businessProfile",
-  marketResearch: "marketResearch",
-  strategy: "socialStrategy",
-};
-
 // ─────────────────────────────────────────────
 // Document file card
 // ─────────────────────────────────────────────
@@ -361,7 +354,7 @@ function DocCard({ meta, content, businessId, onOpen, onDelete, onRegenerate }: 
       const res = await fetch("/api/regenerate-doc", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessId, docType: REGEN_TYPE[meta.key] }),
+        body: JSON.stringify({ businessId, docType: { businessProfile: "businessProfile", marketResearch: "marketResearch", strategy: "socialStrategy" }[meta.key] }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Generation failed");
@@ -464,19 +457,31 @@ function DocCard({ meta, content, businessId, onOpen, onDelete, onRegenerate }: 
 // ─────────────────────────────────────────────
 // Main board content
 // ─────────────────────────────────────────────
+// Maps board key → regenerate-doc API docType
+const REGEN_API_TYPE: Record<DocKey, string> = {
+  businessProfile: "businessProfile",
+  marketResearch: "marketResearch",
+  strategy: "socialStrategy",
+};
+
+function isDocEmpty(content: string) {
+  return !content || !content.trim() || content.startsWith("No ");
+}
+
 function BoardContent() {
   const [dna, setDna] = useState<Record<string, any> | null>(null);
   const [docs, setDocs] = useState<BrandDocuments | null>(null);
   const [businessId, setBusinessId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("All");
   const [activeDoc, setActiveDoc] = useState<DocMeta | null>(null);
+  const [autoBuilding, setAutoBuilding] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
 
   useEffect(() => {
     const id = searchParams.get('id');
     setBusinessId(id);
-    if (!id) return; // will show "no id" state below
+    if (!id) return;
 
     const fetchBusiness = async () => {
       try {
@@ -509,11 +514,35 @@ function BoardContent() {
           images: cleanImageList(guidelines.images || data.scraped_data?.images?.map((img: any) => img.url) || []),
         });
 
-        setDocs({
+        const freshDocs: BrandDocuments = {
           strategy: data.social_strategy || "",
           marketResearch: data.market_research || "",
           businessProfile: data.business_profile || "",
-        });
+        };
+        setDocs(freshDocs);
+
+        // Auto-generate any empty documents from the knowledge base
+        const emptyKeys = (Object.keys(freshDocs) as DocKey[]).filter(k => isDocEmpty(freshDocs[k]));
+        if (emptyKeys.length > 0) {
+          setAutoBuilding(true);
+          Promise.all(
+            emptyKeys.map(async (key) => {
+              try {
+                const r = await fetch("/api/regenerate-doc", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ businessId: id, docType: REGEN_API_TYPE[key] }),
+                });
+                const d = await r.json();
+                if (r.ok && d.content) {
+                  setDocs(prev => prev ? { ...prev, [key]: d.content } : prev);
+                }
+              } catch (e) {
+                console.error(`Auto-regen failed for ${key}:`, e);
+              }
+            })
+          ).finally(() => setAutoBuilding(false));
+        }
       } catch (e) {
         console.error(e);
       }
@@ -605,10 +634,17 @@ function BoardContent() {
                   <h2 className="text-[17px] font-bold text-[#111111]">Documents</h2>
                   <p className="text-[13px] text-[#A1A1AA] mt-0.5">AI-generated knowledge files — click to view, edit or delete</p>
                 </div>
-                <div className="flex items-center gap-2 text-[12px] text-[#A1A1AA] font-medium bg-[#F4F4F5] px-3 py-1.5 rounded-full">
-                  <FileText className="w-3.5 h-3.5" />
-                  {DOC_META.length} files
-                </div>
+                {autoBuilding ? (
+                  <div className="flex items-center gap-2 text-[12px] font-semibold text-[#7C3AED] bg-[#F5F3FF] px-3 py-1.5 rounded-full">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Building from knowledge base…
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-[12px] text-[#A1A1AA] font-medium bg-[#F4F4F5] px-3 py-1.5 rounded-full">
+                    <FileText className="w-3.5 h-3.5" />
+                    {DOC_META.length} files
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-col gap-3">
