@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServiceSupabase } from '@/lib/supabase';
+import { localDb } from '@/lib/localDb';
 
 const ALLOWED_FIELDS = ['business_profile', 'market_research', 'social_strategy', 'enriched_data', 'brand_guidelines'];
 
@@ -12,11 +12,7 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: `field must be one of: ${ALLOWED_FIELDS.join(', ')}` }, { status: 400 });
     }
 
-    const supabase = getServiceSupabase();
-    const { error } = await supabase
-      .from('businesses')
-      .update({ [field]: content ?? null })
-      .eq('id', id);
+    const { error } = localDb.update(id, { [field]: content ?? null });
 
     if (error) {
       console.error('[update-business]', error);

@@ -1,5 +1,12 @@
 import { NextResponse } from 'next/server';
-import { getServiceSupabase } from '@/lib/supabase';
+import { localDb } from '@/lib/localDb';
+
+const mockSupabase = {
+  from: () => ({
+    insert: (arr: any[]) => ({ select: () => ({ single: async () => localDb.insert(arr[0]) }) }),
+    update: (obj: any) => ({ eq: async (field: string, val: string) => localDb.update(val, obj) })
+  })
+};
 
 export async function POST(req: Request) {
   try {
@@ -8,7 +15,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
-    const supabase = getServiceSupabase();
+    const supabase = mockSupabase;
     const normalizedUrl = url.startsWith('http') ? url : `https://${url}`;
     const hostName = businessName || new URL(normalizedUrl).hostname.replace('www.', '');
 

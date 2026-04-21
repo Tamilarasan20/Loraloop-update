@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getServiceSupabase } from '@/lib/supabase';
+import { localDb } from '@/lib/localDb';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -9,12 +9,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Business ID is required' }, { status: 400 });
   }
 
-  const supabase = getServiceSupabase();
-  const { data, error } = await supabase
-    .from('businesses')
-    .select('status, error_message')
-    .eq('id', id)
-    .single();
+  const data = localDb.get(id);
+  const error = !data ? new Error('Not found') : null;
 
   if (error || !data) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
