@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServiceSupabase } from "@/lib/supabase";
+import { localDb } from "@/lib/localDb";
 import { callGemini } from "@/lib/gemini";
 
 const VALID_DOCS = ["businessProfile", "marketResearch", "socialStrategy"] as const;
@@ -193,14 +193,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "businessId and valid docType required" }, { status: 400 });
     }
 
-    const supabase = getServiceSupabase();
-    const { data: business, error } = await supabase
-      .from("businesses")
-      .select("*")
-      .eq("id", businessId)
-      .single();
-
-    if (error || !business) {
+    const business = localDb.get(businessId);
+    if (!business) {
       return NextResponse.json({ error: "Business not found" }, { status: 404 });
     }
 
@@ -227,55 +221,122 @@ Existing Profile: ${(business.business_profile || "").slice(0, 400)}
     const PROMPTS: Record<DocType, { taskType: string; prompt: string }> = {
       businessProfile: {
         taskType: "business-profile",
-        prompt: `You are a senior brand analyst. Write a detailed Business Profile document in markdown for ${brandName}.
+        prompt: `You are a senior brand analyst. Write a highly professional Business Profile document in markdown for ${brandName}.
 
 BRAND DATA:
 ${brandContext}
 
-Write the Business Profile with these sections:
+Write the Business Profile. Format it exactly like this structure:
 # ${brandName} – Business Profile
-## Overview
-## Products & Services
-## Key Selling Points
-## Target Audience
-## Brand Positioning
 
-Rules: Use ## headers, - bullets, **bold** key terms. Min 400 words. Only facts from brand data.`,
+## Overview
+A detailed paragraph explaining what the business does, who founded it (founder story), and their market positioning (e.g. bridging heritage with modern trends).
+
+## Products
+- **[Product Name]** – short description or flavor profile.
+
+## Key Selling Points
+- Provide 5-8 bullet points of the most compelling reasons to choose this brand (e.g. nutrition facts, ingredients, uses).
+
+## Retail Presence
+Where products are sold — simply list retailers, websites, or physical locations.
+
+## Target Audience
+5 demographic or psychographic bullet points (e.g. Health-conscious UK consumers, Flexitarians).
+
+## Founder Story
+A short paragraph about the founders' background, heritage, and why they built the company.
+
+## Marketing Goals
+- Social media growth and engagement
+- Brand awareness
+- [add any other inferred goals]
+
+## Website
+${url}
+
+Rules:
+1. Only facts from brand data.
+2. DO NOT use markdown tables; use bulleted lists instead.
+3. Use ## headers, - bullets.
+4. ANTIGRAVITY TEXT PROCESSOR STRICT RULES: Clean text, clear hierarchy, structured format. NO placeholders (e.g., {{title}}, lorem ipsum). Human-readable, polished formatting ready to publish. No unnecessary symbols or encoding issues.`,
       },
       marketResearch: {
         taskType: "market-research",
-        prompt: `You are a senior market researcher. Write a Market Research document in markdown for ${brandName}.
+        prompt: `You are a senior market researcher. Write a highly professional Market Research document in markdown for ${brandName}.
 
 BRAND DATA:
 ${brandContext}
 
-Write the Market Research with these sections:
+Write the Market Research exactly like this structure:
 # ${brandName} – Market Research
-## Market Opportunity
-## Competitive Landscape (8-10 real named competitors)
-## SEO Keywords (15-20 grouped by intent)
-## Target Audiences on Social
-## Opportunities & Gaps
 
-Rules: Real named competitors only. Use ## headers, - bullets. Min 500 words.`,
+## Market Opportunity
+4-5 bullet points on the market they operate in, growth indicators, and macro trends.
+
+## Trend Tailwinds
+3-4 bullet points on specific consumer trends driving this industry right now.
+
+## Competitive Landscape
+List real named competitor companies. 
+- **[Competitor Name]** – 1 line on what they do and how they compare.
+- **[Competitor Name]** – ...
+
+## Key Risk
+1-2 bullet points on vulnerabilities (e.g. market education needed, algorithm changes).
+
+## Social Platform Data (2025)
+- TikTok brand follower growth potential
+- Instagram organic reach trends
+- LinkedIn B2B growth
+- Best-performing content types
+
+## Target Audiences on Social
+4-5 distinct audience segments. Format:
+- **[Segment Name]** – what they respond to / how to frame the product.
+
+Rules:
+1. Real named competitors only.
+2. DO NOT use markdown tables; use bulleted lists instead.
+3. ANTIGRAVITY TEXT PROCESSOR STRICT RULES: Clean text, clear hierarchy, structured format. NO placeholders (e.g., {{title}}, lorem ipsum). Human-readable, polished formatting ready to publish. No unnecessary symbols or encoding issues.`,
       },
       socialStrategy: {
         taskType: "social-strategy",
-        prompt: `You are a senior social media strategist. Write a Social Media Strategy in markdown for ${brandName}.
+        prompt: `You are a senior social media strategist. Write a highly professional Social Media Strategy document in markdown for ${brandName}.
 
 BRAND DATA:
 ${brandContext}
 
-Write the Social Media Strategy with these sections:
+Write the Social Media Strategy exactly like this structure:
 # ${brandName} – Social Media Strategy
-## Priority Platforms
-## Content Pillars (4-6 themes with example posts)
-## Posting Cadence
-## Messaging Hierarchy
-## Quick Wins (5-7 actions for next 30 days)
-## Brand Voice Guide
 
-Rules: Specific to ${brandName}'s industry and tone. Min 500 words.`,
+## Priority Platforms (Ranked)
+- **[Platform 1]** – why it's a priority and content format.
+- **[Platform 2]** – ...
+
+## Content Pillars (use across all platforms)
+1. **[Pillar 1 Name]** (e.g. Product Proof)
+Provide 3-4 bullet points of example post ideas under this pillar.
+2. **[Pillar 2 Name]** (e.g. Founder Story)
+Provide 3-4 bullet points...
+(Include 4-5 pillars total)
+
+## Posting Cadence (Recommended)
+Use bullet points to list recommended posting frequency and priority format per platform (e.g. TikTok: 4-5x per week... Instagram: 4x per week).
+
+## Messaging Hierarchy
+4 core messages ranked by priority:
+- "Lead hook / Main claim" — lead hook
+- "Secondary claim" — secondary hook
+- "Validation" — proof via reviews or demos
+- "Trust factor" — trust + authenticity
+
+## Quick Wins
+5-6 bullet points of immediate, easily actionable tactics for the next 30 days (e.g. pin a video, repurpose reviews, get founder on camera).
+
+Rules:
+1. Specific to ${brandName}'s industry and tone.
+2. DO NOT use markdown tables; use bulleted lists.`,
       },
     };
 
@@ -301,11 +362,8 @@ Rules: Specific to ${brandName}'s industry and tone. Min 500 words.`,
       content = templates[docType as DocType];
     }
 
-    // Save to Supabase
-    const { error: saveError } = await supabase
-      .from("businesses")
-      .update({ [DB_FIELD[docType as DocType]]: content })
-      .eq("id", businessId);
+    // Save to LocalDb
+    const { error: saveError } = localDb.update(businessId, { [DB_FIELD[docType as DocType]]: content });
 
     if (saveError) {
       return NextResponse.json({ error: saveError.message }, { status: 500 });

@@ -357,7 +357,7 @@ function SiteScreenshot({ url, domain }: { url: string; domain: string }) {
       )}
       {status !== "error" && (
         <iframe
-          src={url}
+          src={`/api/proxy?url=${encodeURIComponent(url || "")}`}
           className="w-full h-full border-none"
           style={{ pointerEvents: "none", transform: "scale(0.6)", transformOrigin: "top left", width: "166%", height: "166%" }}
           sandbox="allow-scripts allow-same-origin"

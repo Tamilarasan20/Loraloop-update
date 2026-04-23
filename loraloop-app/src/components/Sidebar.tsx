@@ -1,13 +1,14 @@
 "use client";
-
 import { usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Home, Inbox, Zap, ChevronDown, Wand2 } from "lucide-react";
+import { Home, Inbox, MessageSquare, Calendar, BarChart, Zap, Search, ChevronDown } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Home", icon: Home },
   { href: "/inbox", label: "Inbox", icon: Inbox },
-  { href: "/integration", label: "Integration", icon: Zap },
+  { href: "/chat", label: "Chat", icon: MessageSquare },
+  { href: "/calendar", label: "Calendar", icon: Calendar },
+  { href: "/ads", label: "Ads", icon: BarChart },
 ];
 
 export default function Sidebar() {
@@ -52,16 +53,23 @@ export default function Sidebar() {
       {/* Main Navigation */}
       <nav className="flex-1 flex flex-col gap-1.5 px-4">
         {NAV_ITEMS.map((item) => {
-          const isActive = pathname === item.href && pathname !== "/"; // Just keeping Home inactive for visual match since Lora is focused in mock
+          // Chat should be active if we are on /chat
+          let isActive = pathname === item.href && pathname !== "/";
+          if (item.href === "/chat" && (pathname.startsWith("/chat") || pathname.startsWith("/board") || pathname.startsWith("/steve"))) {
+            isActive = true;
+          }
+          
           const Icon = item.icon;
+          // Append business ID to chat if it exists
+          const finalHref = item.href === "/chat" && businessId ? `/chat?id=${businessId}` : item.href;
 
           return (
              <Link
                key={item.href}
-               href={item.href}
+               href={finalHref}
                className={`flex items-center gap-3.5 px-4 py-2.5 rounded-xl transition-colors font-semibold text-[14px] ${
                  isActive
-                   ? "bg-[#E0EEBA] text-[#111111]"
+                   ? "bg-[#3B82F6] text-white shadow-md shadow-blue-500/20"
                    : "text-[#3F3F46] hover:text-[#111111] hover:bg-[#F4F4F5]"
                }`}
              >
@@ -71,39 +79,36 @@ export default function Sidebar() {
           );
         })}
 
-        {/* APPS section */}
-        <div className="mt-2 text-[12px] font-bold text-[#A1A1AA] uppercase tracking-wider px-4 mb-1">APPS</div>
+        {/* Manage section */}
+        <div className="mt-4 text-[12px] font-bold text-[#A1A1AA] uppercase tracking-wider px-4 mb-2">Manage</div>
+
+        <Link
+           href="/analytics"
+           className="flex items-center gap-3.5 px-4 py-2.5 rounded-xl transition-colors font-semibold text-[14px] text-[#3F3F46] hover:text-[#111111] hover:bg-[#F4F4F5]"
+         >
+           <BarChart className="w-[18px] h-[18px] shrink-0 opacity-80" strokeWidth={2} />
+           <span className="whitespace-nowrap">Analytics</span>
+        </Link>
 
         {/* Lora Knowledge Base */}
         <Link
-           href="/"
-           className={`flex items-center gap-3.5 px-4 py-3 rounded-xl transition-colors font-semibold text-[14px] ${
-             pathname === "/" || pathname.startsWith("/board") || pathname.startsWith("/loading") || pathname.startsWith("/campaigns")
-               ? "bg-[#2563EB] text-white shadow-md shadow-blue-500/20"
+           href={businessId ? `/board?id=${businessId}` : "/"}
+           className={`flex items-center gap-3.5 px-4 py-2.5 rounded-xl transition-colors font-semibold text-[14px] ${
+             pathname.startsWith("/board")
+               ? "bg-[#E0EEBA] text-[#111111]"
                : "text-[#3F3F46] hover:text-[#111111] hover:bg-[#F4F4F5]"
            }`}
          >
-           <div className="flex items-center justify-center opacity-90">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="2" x2="12" y2="22"></line>
-                <line x1="12" y1="2" x2="12" y2="22"></line>
-                </svg>
-           </div>
+           <Search className="w-[18px] h-[18px] shrink-0 opacity-80" strokeWidth={2} />
            <span className="whitespace-nowrap">Lora Knowledge Base</span>
         </Link>
-
-        {/* Steve — AI Visual Designer */}
+        
         <Link
-           href={businessId ? `/steve?id=${businessId}` : "/"}
-           className={`flex items-center gap-3.5 px-4 py-3 rounded-xl transition-colors font-semibold text-[14px] ${
-             pathname.startsWith("/steve")
-               ? "bg-gradient-to-r from-[#7C3AED] to-[#DB2777] text-white shadow-md shadow-purple-500/20"
-               : "text-[#3F3F46] hover:text-[#111111] hover:bg-[#F4F4F5]"
-           }`}
+           href="/integration"
+           className="flex items-center gap-3.5 px-4 py-2.5 rounded-xl transition-colors font-semibold text-[14px] text-[#3F3F46] hover:text-[#111111] hover:bg-[#F4F4F5]"
          >
-           <Wand2 className="w-[18px] h-[18px] shrink-0 opacity-90" strokeWidth={2.5} />
-           <span className="whitespace-nowrap">Steve · Visual Designer</span>
+           <Zap className="w-[18px] h-[18px] shrink-0 opacity-80" strokeWidth={2} />
+           <span className="whitespace-nowrap">Integration</span>
         </Link>
       </nav>
 

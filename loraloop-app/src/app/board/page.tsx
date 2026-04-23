@@ -36,10 +36,10 @@ function cleanImageList(raw: any[]): string[] {
 // ─────────────────────────────────────────────
 function SimpleMarkdown({ content }: { content: string }) {
   const parseLine = (line: string): string => {
-    let html = line.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-[#111111]">$1</strong>');
-    html = html.replace(/\*(.*?)\*/g, '<em class="italic text-[#3F3F46]">$1</em>');
-    html = html.replace(/`(.*?)`/g, '<code class="bg-[#F4F4F5] text-[#18181B] text-[13px] px-1.5 py-0.5 rounded font-mono">$1</code>');
-    html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener" class="text-[#2563EB] underline decoration-[#2563EB]/30 hover:decoration-[#2563EB] underline-offset-2 transition-colors">$1</a>');
+    let html = line.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-[#0f172a]">$1</strong>');
+    html = html.replace(/\*(.*?)\*/g, '<em class="italic text-[#334155]">$1</em>');
+    html = html.replace(/`(.*?)`/g, '<code class="bg-[#f8fafc] text-[#0f172a] border border-[#e2e8f0] text-[13.5px] px-1.5 py-0.5 rounded-md font-mono">$1</code>');
+    html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" rel="noopener" class="text-blue-600 underline decoration-blue-600/30 hover:decoration-blue-600 underline-offset-4 transition-colors font-medium">$1</a>');
     return html;
   };
 
@@ -48,39 +48,55 @@ function SimpleMarkdown({ content }: { content: string }) {
     return blocks.map((block, i) => {
       const trimmed = block.trim();
       if (!trimmed) return null;
+
+      // H1 (Title)
       if (trimmed.startsWith('# ') && !trimmed.startsWith('## ')) {
-        return <h1 key={i} className="text-[22px] font-bold text-[#111111] mb-5 mt-2 tracking-tight leading-snug">{trimmed.replace(/^# /, '')}</h1>;
+        return <h1 key={i} className="text-[28px] md:text-3xl font-extrabold text-[#0f172a] mb-8 mt-2 tracking-tight leading-tight border-b-2 border-gray-100 pb-4">{trimmed.replace(/^# /, '')}</h1>;
       }
+      // H3 (Sub-section)
       if (trimmed.startsWith('### ')) {
-        return <h3 key={i} className="text-[15px] font-semibold text-[#27272A] mb-3 mt-5">{trimmed.replace(/^### /, '')}</h3>;
+        return <h3 key={i} className="text-[15px] font-bold text-[#475569] mb-3 mt-8 uppercase tracking-wider">{trimmed.replace(/^### /, '')}</h3>;
       }
+      // H2 (Section)
       if (trimmed.startsWith('## ')) {
-        return <h2 key={i} className="text-[17px] font-bold text-[#111111] mb-4 mt-8 first:mt-0 tracking-tight">{trimmed.replace(/^## /, '')}</h2>;
+        return <h2 key={i} className="text-[20px] md:text-[22px] font-bold text-[#0f172a] mb-5 mt-10 first:mt-0 tracking-tight border-b border-gray-100 pb-3">{trimmed.replace(/^## /, '')}</h2>;
       }
+      // Blockquote (Executive Summary)
+      if (trimmed.startsWith('> ')) {
+        const text = trimmed.split('\n').map(line => line.replace(/^>\s?/, '')).join(' ');
+        return (
+          <blockquote key={i} className="border-l-[3px] border-[#2563eb] pl-5 py-3 my-8 bg-[#eff6ff]/50 rounded-r-xl italic text-[#334155] text-[16px] leading-relaxed">
+            <span dangerouslySetInnerHTML={{ __html: parseLine(text) }} />
+          </blockquote>
+        );
+      }
+      // Divider
       if (trimmed === '---' || trimmed === '***') {
-        return <hr key={i} className="border-t border-[#E5E7EB] my-6" />;
+        return <hr key={i} className="border-t border-[#e2e8f0] my-10" />;
       }
+      // Numbered List
       if (/^\d+\.\s/.test(trimmed)) {
         const items = trimmed.split('\n');
         return (
-          <ol key={i} className="list-decimal pl-5 mb-5 space-y-3 text-[#3F3F46]">
+          <ol key={i} className="list-decimal pl-6 mb-6 space-y-3 text-[#334155] marker:text-[#64748b] marker:font-medium">
             {items.map((item, j) => {
               const text = item.replace(/^\d+\.\s/, '');
               if (!text.trim()) return null;
-              return <li key={j} className="text-[15px] leading-[1.7] pl-1"><span dangerouslySetInnerHTML={{ __html: parseLine(text) }} /></li>;
+              return <li key={j} className="text-[15.5px] leading-relaxed pl-1"><span dangerouslySetInnerHTML={{ __html: parseLine(text) }} /></li>;
             })}
           </ol>
         );
       }
-      if (trimmed.startsWith('- ')) {
+      // Bullet List
+      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
         const items = trimmed.split('\n');
         return (
-          <ul key={i} className="mb-5 space-y-3 text-[#3F3F46]">
+          <ul key={i} className="mb-6 space-y-3 text-[#334155]">
             {items.map((item, j) => {
-              const text = item.replace(/^-\s/, '');
+              const text = item.replace(/^[-*]\s/, '');
               if (!text.trim()) return null;
               return (
-                <li key={j} className="text-[15px] leading-[1.7] pl-5 relative before:content-[''] before:absolute before:left-[6px] before:top-[10px] before:w-[5px] before:h-[5px] before:rounded-full before:bg-[#A1A1AA]">
+                <li key={j} className="text-[15.5px] leading-relaxed pl-6 relative before:content-[''] before:absolute before:left-1 before:top-[11px] before:w-[5px] before:h-[5px] before:rounded-full before:bg-[#94a3b8]">
                   <span dangerouslySetInnerHTML={{ __html: parseLine(text) }} />
                 </li>
               );
@@ -88,11 +104,39 @@ function SimpleMarkdown({ content }: { content: string }) {
           </ul>
         );
       }
-      return <p key={i} className="text-[15px] text-[#3F3F46] mb-5 leading-[1.75] whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: parseLine(trimmed) }} />;
+      // Basic Table Support
+      if (trimmed.startsWith('|') && trimmed.includes('\n|')) {
+        const lines = trimmed.split('\n').map(l => l.trim()).filter(l => l.startsWith('|'));
+        if (lines.length >= 2) {
+          const headers = lines[0].split('|').filter(Boolean).map(s => parseLine(s.trim()));
+          const rows = lines.slice(2).map(row => row.split('|').filter(Boolean).map(s => parseLine(s.trim())));
+          return (
+            <div key={i} className="overflow-x-auto mb-8 mt-6 rounded-xl border border-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 text-left text-[14.5px]">
+                <thead className="bg-[#f8fafc]">
+                  <tr>
+                    {headers.map((h, hIdx) => <th key={hIdx} className="px-6 py-4 font-semibold text-gray-700 tracking-wider whitespace-nowrap" dangerouslySetInnerHTML={{ __html: h }} />)}
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-100">
+                  {rows.map((row, rIdx) => (
+                    <tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}>
+                      {row.map((cell, cIdx) => <td key={cIdx} className="px-6 py-4 text-gray-600 leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: cell }} />)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+      }
+
+      // Default Paragraph
+      return <p key={i} className="text-[15.5px] text-[#334155] mb-6 leading-[1.8] whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: parseLine(trimmed) }} />;
     });
   };
 
-  return <div className="markdown-prose font-[system-ui,-apple-system,sans-serif]">{parseMarkdown(content)}</div>;
+  return <div className="markdown-prose font-sans antialiased text-[#0f172a]">{parseMarkdown(content)}</div>;
 }
 
 // ─────────────────────────────────────────────
@@ -709,6 +753,7 @@ function BoardContent() {
               onClick={() => {
                 if (confirm("Are you sure you want to reset your Knowledge Base?")) {
                   localStorage.removeItem("brandDna");
+                  localStorage.removeItem("approvedBusinessId");
                   router.push("/");
                 }
               }}
@@ -717,7 +762,10 @@ function BoardContent() {
               Reset
             </button>
             <button
-              onClick={() => router.push(`/campaigns?id=${businessId}`)}
+              onClick={() => {
+                localStorage.setItem("approvedBusinessId", businessId);
+                router.push(`/chat?id=${businessId}`);
+              }}
               className="bg-[#2563EB] text-white px-8 py-2.5 rounded-xl font-semibold text-[14px] hover:bg-[#1D4ED8] shadow-md transition-colors shadow-blue-500/20"
             >
               Looks Good

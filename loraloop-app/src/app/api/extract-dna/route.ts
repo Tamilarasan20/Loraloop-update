@@ -63,16 +63,16 @@ async function autoScroll(page: Page) {
   await page.evaluate(async () => {
     await new Promise<void>((resolve) => {
       let totalHeight = 0;
-      const distance = 800;   // bigger jumps (was 400)
-      const timer = setInterval(() => {
-        window.scrollBy(0, distance);
-        totalHeight += distance;
-        if (totalHeight >= document.body.scrollHeight || totalHeight > 5000) { // cap at 5k (was 8k)
-          clearInterval(timer);
-          window.scrollTo(0, 0);
-          resolve();
-        }
-      }, 80); // faster interval (was 150ms)
+    const distance = 500;
+    const timer = setInterval(() => {
+      window.scrollBy(0, distance);
+      totalHeight += distance;
+      if (totalHeight >= document.body.scrollHeight || totalHeight > 10000) {
+        clearInterval(timer);
+        window.scrollTo(0, 0);
+        resolve();
+      }
+    }, 120);
     });
   });
 }
@@ -135,6 +135,8 @@ async function scrapePage(page: Page) {
       let s = extractCleanUrl(src);
       if (s.startsWith("//")) s = "https:" + s;
       if (s && !seenSrcs.has(s) && s.startsWith("http") && !s.includes(" ")) {
+        // Exclude base64 strings and common tracking pixels
+        if (s.startsWith("data:")) return;
         seenSrcs.add(s);
         images.push(s);
       }
@@ -228,10 +230,20 @@ async function scrapePage(page: Page) {
     // ── IMAGES — aggressive multi-source capture ──
 
     // Strategy 1: All <img> tags with every lazy-load attribute variant
-    // NOTE: data-srcset is intentionally excluded — handled by the srcset block below
     const lazyAttrs = ["src", "data-src", "data-lazy-src", "data-original",
       "data-lazy", "data-image", "data-bg", "data-full", "data-hi-res", "loading-src"];
     for (const img of Array.from(document.querySelectorAll("img"))) {
+      // Validate dimensions if possible to avoid tiny icons/pixels
+      const rect = img.getBoundingClientRect();
+      const naturalWidth = img.naturalWidth || 0;
+      const naturalHeight = img.naturalHeight || 0;
+      const isTooSmall = (naturalWidth > 0 && naturalWidth < 150) || 
+                         (naturalHeight > 0 && naturalHeight < 150) || 
+                         (rect.width > 0 && rect.width < 150) || 
+                         (rect.height > 0 && rect.height < 150);
+      
+      if (isTooSmall) continue;
+
       for (const attr of lazyAttrs) {
         const val = img.getAttribute(attr);
         if (!val) continue;
@@ -249,6 +261,24 @@ async function scrapePage(page: Page) {
           if (!u) return;
           try { addImg(new URL(u, document.baseURI).href); } catch { addImg(u); }
         });
+      }
+    }
+
+    // Strategy 2: Background Images
+    const allElements = document.querySelectorAll("*");
+    for (const el of Array.from(allElements)) {
+      const style = window.getComputedStyle(el);
+      const bgImg = style.backgroundImage;
+      if (bgImg && bgImg !== "none") {
+        const m = bgImg.match(/url\(['"]?(.*?)['"]?\)/);
+        if (m && m[1]) {
+          const val = m[1];
+          if (val.startsWith("http") || val.startsWith("//")) {
+            addImg(val);
+          } else if (val.startsWith("/")) {
+            try { addImg(new URL(val, document.baseURI).href); } catch { /* skip */ }
+          }
+        }
       }
     }
 
@@ -327,86 +357,94 @@ async function scrapePage(page: Page) {
     }
 
     // ── TEXT — structured extraction ──
-    const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute("content") || "";
-    const ogDesc = document.querySelector('meta[property="og:description"]')?.getAttribute("content") || "";
-    const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute("content") || "";
-
-    // Gather text from semantic elements, ordered by importance
-    const textParts: string[] = [];
-    if (ogTitle) textParts.push(ogTitle);
-    if (metaDesc) textParts.push(metaDesc);
-    if (ogDesc && ogDesc !== metaDesc) textParts.push(ogDesc);
-
-    const contentSelectors = [
-      "h1", "h2", "h3", "h4",
-      "[class*='hero'] p", "[class*='hero'] h1", "[class*='hero'] h2",
-      "[class*='tagline']", "[class*='slogan']", "[class*='headline']",
-      "[class*='subtitle']", "[class*='description']",
-      "main p", "article p", "section p",
-      "p", "li", "blockquote", "figcaption",
-      "[class*='feature'] h3", "[class*='feature'] p",
-      "[class*='about'] p", "[class*='mission'] p",
-      "footer p",
+    // Remove noise before extraction
+    const noiseSelectors = [
+      "nav", "header", "footer", "script", "style", "noscript", "iframe",
+      "svg", "form", "button", ".menu", ".nav", ".footer", ".cookie-banner",
+      "[role='navigation']", "[role='banner']", "[role='contentinfo']",
+      "#cookie-banner", ".modal", ".popup", "[aria-hidden='true']", "aside"
     ];
-    for (const sel of contentSelectors) {
-      for (const el of Array.from(document.querySelectorAll(sel))) {
-        const t = el.textContent?.trim();
-        if (t && t.length > 5 && !textParts.includes(t)) textParts.push(t);
+    noiseSelectors.forEach(sel => {
+      document.querySelectorAll(sel).forEach(el => el.remove());
+    });
+
+    // Extract structured text (Headings + Paragraphs)
+    const textParts: string[] = [];
+    
+    const pageTitle = document.title;
+    if (pageTitle) textParts.push(`# ${pageTitle}\n`);
+
+    const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute("content") || "";
+    if (metaDesc) textParts.push(`Description: ${metaDesc}\n`);
+    
+    // Walk the DOM for semantic content
+    const walkDOM = (node: Node) => {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as HTMLElement;
+        const tag = el.tagName.toLowerCase();
+        
+        // Skip hidden elements
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return;
+
+        if (tag === 'h1' || tag === 'h2' || tag === 'h3' || tag === 'h4') {
+          const text = el.textContent?.trim().replace(/\s+/g, ' ');
+          if (text && text.length > 3) textParts.push(`\n${'#'.repeat(parseInt(tag[1]))} ${text}`);
+        } else if (tag === 'p') {
+          // Only direct text content for paragraphs to avoid duplicating child text
+          const text = el.textContent?.trim().replace(/\s+/g, ' ');
+          if (text && text.length > 20) textParts.push(text);
+        } else if (tag === 'li') {
+          const text = el.textContent?.trim().replace(/\s+/g, ' ');
+          if (text && text.length > 10) textParts.push(`- ${text}`);
+        } else {
+          // Recurse into children if it's a container
+          node.childNodes.forEach(child => walkDOM(child));
+        }
       }
-    }
+    };
 
-    // JSON-LD structured data
-    const jsonLd = document.querySelectorAll('script[type="application/ld+json"]');
-    for (const script of Array.from(jsonLd)) {
-      try {
-        const data = JSON.parse(script.textContent || "");
-        if (data.description) textParts.push(data.description);
-        if (data.name) textParts.push(data.name);
-        if (data.slogan) textParts.push(data.slogan);
-      } catch { /* skip */ }
-    }
+    walkDOM(document.body);
+    
+    // Deduplicate and clean
+    const cleanTextParts = textParts.filter((item, index, arr) => {
+      if (!item) return false;
+      if (index === 0) return true;
+      return item !== arr[index - 1]; // basic consecutive deduplication
+    });
 
-    const textSample = textParts.join(" | ").slice(0, 5000);
+    const textSample = cleanTextParts.join("\n").slice(0, 15000);
 
-    // ── INTERNAL LINKS — crawl ALL level-1 navigation links ──
+    // ── INTERNAL LINKS — prioritize Level 2 pages ──
     const baseHostname = window.location.hostname;
     const seenPaths = new Set<string>([window.location.pathname]);
     const internalLinks: string[] = [];
+    const level2Links: string[] = [];
     const skipPatterns = ["login", "signin", "signup", "register", "cart", "checkout", "account", "privacy", "terms", "cookie", "legal", "#", "mailto:", "tel:", "javascript:"];
+    const level2Patterns = ["feature", "pricing", "price", "about", "blog", "case-study", "case-studies", "work", "portfolio"];
 
-    // Strategy 1: ALL links inside nav/header (primary navigation)
-    const navAreas = document.querySelectorAll("nav, header, [role='navigation'], [class*='nav'], [class*='menu']");
-    for (const area of Array.from(navAreas)) {
-      for (const a of Array.from(area.querySelectorAll("a[href]"))) {
-        try {
-          const href = new URL((a as HTMLAnchorElement).href, document.baseURI);
-          const path = href.pathname.toLowerCase();
-          if (href.hostname === baseHostname && !seenPaths.has(href.pathname) && path !== "/") {
-            if (!skipPatterns.some((s) => path.includes(s) || href.href.includes(s))) {
-              seenPaths.add(href.pathname);
+    for (const a of Array.from(document.querySelectorAll("a[href]"))) {
+      try {
+        const href = new URL((a as HTMLAnchorElement).href, document.baseURI);
+        const path = href.pathname.toLowerCase();
+        
+        if (href.hostname === baseHostname && !seenPaths.has(href.pathname) && path !== "/") {
+          if (!skipPatterns.some((s) => path.includes(s) || href.href.includes(s))) {
+            seenPaths.add(href.pathname);
+            
+            // Categorize as Level 2 if it matches our patterns
+            if (level2Patterns.some(p => path.includes(p))) {
+              level2Links.push(href.href);
+            } else {
               internalLinks.push(href.href);
             }
           }
-        } catch { /* skip */ }
-      }
+        }
+      } catch { /* skip */ }
     }
 
-    // Strategy 2: Any remaining same-domain links with useful paths (backup)
-    if (internalLinks.length < 6) {
-      for (const a of Array.from(document.querySelectorAll("a[href]"))) {
-        if (internalLinks.length >= 8) break;
-        try {
-          const href = new URL((a as HTMLAnchorElement).href, document.baseURI);
-          const path = href.pathname.toLowerCase();
-          if (href.hostname === baseHostname && !seenPaths.has(href.pathname) && path !== "/" && path.split("/").length <= 3) {
-            if (!skipPatterns.some((s) => path.includes(s) || href.href.includes(s))) {
-              seenPaths.add(href.pathname);
-              internalLinks.push(href.href);
-            }
-          }
-        } catch { /* skip */ }
-      }
-    }
+    // Combine Level 2 links first, then pad with other internal links up to 6
+    const prioritizedLinks = [...level2Links, ...internalLinks].slice(0, 6);
 
     return {
       colors: Array.from(colors).filter((c) => c.startsWith("#")).slice(0, 25),
@@ -415,7 +453,7 @@ async function scrapePage(page: Page) {
       images: images.slice(0, 50),
       textSample,
       pageTitle: document.title,
-      internalLinks: internalLinks.slice(0, 4),
+      internalLinks: prioritizedLinks,
     };
   });
 }
@@ -491,9 +529,9 @@ export async function POST(req: Request) {
 
       console.log(`[extract-dna] ✅ Main page: ${extractedImages.length} images, ${extractedColors.length} colors`);
 
-      // ── CRAWL INTERNAL PAGES IN PARALLEL (was sequential — biggest bottleneck) ──
-      // Limit to 2 most valuable pages (about + products) — quality stays, time halves
-      const internalLinks = mainData.internalLinks.slice(0, 2);
+      // ── CRAWL LEVEL 2 PAGES IN PARALLEL ──
+      // Scrape up to 5 priority Level 2 pages (Features, Pricing, About, Blog, etc.)
+      const internalLinks = mainData.internalLinks.slice(0, 5);
       if (internalLinks.length > 0) {
         console.log(`[extract-dna] 🔗 Crawling ${internalLinks.length} sub-pages in parallel...`);
 
@@ -661,7 +699,6 @@ SCRAPED DATA:
 - Logo URL: ${extractedLogo}
 - Full Website Text (from homepage + internal pages): """${textSample}"""
 
-YOUR TASK: Return ONLY a valid JSON object (no markdown, no explanation, no code fences) with this EXACT schema:
 {
   "brandName": "The official brand/company name",
   "logoUrl": "${extractedLogo}",
@@ -681,6 +718,38 @@ YOUR TASK: Return ONLY a valid JSON object (no markdown, no explanation, no code
   "brandAesthetic": "comma-separated list of 3-5 visual/aesthetic descriptors",
   "toneOfVoice": "comma-separated list of 3-5 tone descriptors",
   "businessOverview": "2-3 sentence overview of what this business does, their products/services, and their positioning",
+  "visual_identity": {
+    "primary_colors": [],
+    "secondary_colors": [],
+    "background_style": "",
+    "lighting_style": "",
+    "composition_style": "",
+    "spacing_style": "",
+    "design_density": "",
+    "ui_style": "",
+    "image_style": "",
+    "illustration_style": "",
+    "texture_style": ""
+  },
+  "brand_voice": {
+    "tone": [],
+    "writing_style": [],
+    "sentence_length": "",
+    "emotional_style": "",
+    "cta_style": "",
+    "personality_traits": [],
+    "banned_words": [],
+    "preferred_phrases": []
+  },
+  "content_patterns": {
+    "hooks": [],
+    "cta_patterns": [],
+    "carousel_patterns": [],
+    "headline_patterns": [],
+    "visual_patterns": [],
+    "post_structures": [],
+    "ad_frameworks": []
+  },
   "images": []
 }
 
@@ -691,7 +760,8 @@ STRICT REQUIREMENTS:
 4. All fields MUST be filled with real, accurate data. NO placeholder or generic text.
 5. businessOverview must describe the ACTUAL products/services mentioned.
 6. If extracted fonts are system fonts, suggest the closest Google Font equivalent.
-7. Return ONLY the JSON object. No other text.`;
+7. Return ONLY the JSON object. No other text.
+8. ANTIGRAVITY TEXT PROCESSOR STRICT RULES: Extract clean, structured text. Deduplicate any noise. No unnecessary symbols.`;
 
     let parsedDna: any;
     try {
@@ -739,74 +809,116 @@ Website Text: """${textSample.slice(0, 3000)}"""
 `.trim();
 
     const docPrompts = {
-      businessProfile: `You are a senior brand analyst. Using ONLY information from the website text below, write a detailed Business Profile document in markdown.
+      businessProfile: `You are a senior brand analyst. Using ONLY information from the website text below, write a highly professional Business Profile document in markdown for \${parsedDna.brandName}. 
 
-${brandContext}
+\${brandContext}
 
-Write the Business Profile with these exact sections:
-# ${parsedDna.brandName} – Business Profile
+Write the Business Profile. Format it exactly like this structure:
+# \${parsedDna.brandName} – Business Profile
 
 ## Overview
-2-3 paragraphs: what the business does, mission, founding story if mentioned, market positioning.
+A detailed paragraph explaining what the business does, who founded it (founder story), and their market positioning (e.g. bridging heritage with modern trends).
 
-## Products & Services
-List every product or service mentioned with a short description of each.
+## Products
+- **[Product Name]** – short description or flavor profile.
 
 ## Key Selling Points
-5-8 bullet points of the most compelling reasons to choose this brand.
+- Provide 5-8 bullet points of the most compelling reasons to choose this brand (e.g. nutrition facts, ingredients, uses).
 
 ## Retail Presence
-Where products are sold — online store, retailers, marketplaces, physical locations.
+Where products are sold — simply list retailers, websites, or physical locations.
 
 ## Target Audience
-Demographics, psychographics, interests based on the website tone and content.
+5 demographic or psychographic bullet points (e.g. Health-conscious UK consumers, Flexitarians).
 
-Rules: Only facts from website text. Use ## headers, - bullets, **bold** key terms. Min 400 words.`,
+## Founder Story
+A short paragraph about the founders' background, heritage, and why they built the company.
 
-      marketResearch: `You are a senior market researcher. Write a comprehensive Market Research document in markdown.
+## Marketing Goals
+- Social media growth and engagement
+- Brand awareness
+- [add any other inferred goals]
 
-${brandContext}
+## Website
+\${url}
 
-Write the Market Research with these exact sections:
-# ${parsedDna.brandName} – Market Research
+Rules:
+1. Only facts from brand data.
+2. DO NOT use markdown tables; use bulleted lists instead.
+3. Use ## headers, - bullets.
+4. ANTIGRAVITY TEXT PROCESSOR STRICT RULES: Clean text, clear hierarchy, structured format. NO placeholders (e.g., {{title}}, lorem ipsum). Human-readable, polished formatting ready to publish. No unnecessary symbols or encoding issues.`,
+
+      marketResearch: `You are a senior market researcher. Write a highly professional Market Research document in markdown for \${parsedDna.brandName}.
+
+\${brandContext}
+
+Write the Market Research exactly like this structure:
+# \${parsedDna.brandName} – Market Research
 
 ## Market Opportunity
-The market this brand operates in, current trends, growth indicators, why now is a good time.
+4-5 bullet points on the market they operate in, growth indicators, and macro trends.
+
+## Trend Tailwinds
+3-4 bullet points on specific consumer trends driving this industry right now.
 
 ## Competitive Landscape
-List 8-10 REAL named competitor companies. For each, 1-2 lines on what they do and how they compare.
+List real named competitor companies. 
+- **[Competitor Name]** – 1 line on what they do and how they compare.
+- **[Competitor Name]** – ...
+Include a bullet point for "\${parsedDna.brandName}'s edge".
 
-## SEO & GEO Keywords
-15-20 high-value search keywords grouped by intent (informational, commercial, transactional).
+## Key Risk
+1-2 bullet points on vulnerabilities (e.g. market education needed, algorithm changes).
+
+## Social Platform Data (2025)
+- TikTok brand follower growth potential
+- Instagram organic reach trends
+- LinkedIn B2B growth
+- Best-performing content types
 
 ## Target Audiences on Social
-4-5 distinct audience segments — platform preferences, what content resonates, how to reach them.
+4-5 distinct audience segments. Format:
+- **[Segment Name]** – what they respond to / how to frame the product.
 
-Rules: Real named competitors only. Use ## headers, - bullets, **bold** key names. Min 500 words.`,
+Rules:
+1. Real named competitors only.
+2. DO NOT use markdown tables; use bulleted lists instead.
+3. ANTIGRAVITY TEXT PROCESSOR STRICT RULES: Clean text, clear hierarchy, structured format. NO placeholders (e.g., {{title}}, lorem ipsum). Human-readable, polished formatting ready to publish. No unnecessary symbols or encoding issues.`,
 
-      strategy: `You are a senior social media strategist. Write a detailed Social Media Strategy document in markdown.
+      strategy: `You are a senior social media strategist. Write a highly professional Social Media Strategy document in markdown for \${parsedDna.brandName}.
 
-${brandContext}
+\${brandContext}
 
-Write the Social Media Strategy with these exact sections:
-# ${parsedDna.brandName} – Social Media Strategy
+Write the Social Media Strategy exactly like this structure:
+# \${parsedDna.brandName} – Social Media Strategy
 
-## Priority Platforms
-Top 3-4 platforms — why each is a priority, audience, and content format.
+## Priority Platforms (Ranked)
+- **[Platform 1]** – why it's a priority and content format.
+- **[Platform 2]** – ...
 
-## Content Pillars
-4-6 content themes with name, description, 2-3 example post ideas each.
+## Content Pillars (use across all platforms)
+1. **[Pillar 1 Name]** (e.g. Product Proof)
+Provide 3-4 bullet points of example post ideas under this pillar.
+2. **[Pillar 2 Name]** (e.g. Founder Story)
+Provide 3-4 bullet points...
+(Include 4-5 pillars total)
 
-## Posting Cadence
-Recommended posting frequency per platform.
+## Posting Cadence (Recommended)
+Use bullet points to list recommended posting frequency and priority format per platform (e.g. TikTok: 4-5x per week... Instagram: 4x per week).
 
 ## Messaging Hierarchy
-3-4 core messages ranked by priority — lead message, secondary hooks, proof points.
+4 core messages ranked by priority:
+- "Lead hook / Main claim" — lead hook
+- "Secondary claim" — secondary hook
+- "Validation" — proof via reviews or demos
+- "Trust factor" — trust + authenticity
 
 ## Quick Wins
-5-7 immediately actionable tactics for the next 30 days.
+5-6 bullet points of immediate, easily actionable tactics for the next 30 days (e.g. pin a video, repurpose reviews, get founder on camera).
 
-Rules: Specific to ${parsedDna.brandName}'s industry. Tone of voice: ${parsedDna.toneOfVoice}. Min 500 words.`,
+Rules:
+1. Specific to \${parsedDna.brandName}'s industry. Tone: \${parsedDna.toneOfVoice}.
+2. DO NOT use markdown tables; use bulleted lists.`,
     };
 
     // Each doc type uses its own optimal model order via smart router

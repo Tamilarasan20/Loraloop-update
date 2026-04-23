@@ -74,6 +74,14 @@ function LinkedInPreview({ content, images }: { content: string; images: string[
 }
 
 function InstagramPreview({ content, images }: { content: string; images: string[] }) {
+  // Parse structured content: hook\n\ncaption\n\n👉 CTA\n\n#hashtags
+  const lines = content.split("\n").filter(Boolean);
+  const hookLine = lines[0] || "";
+  const hashtagLine = lines.find(l => l.startsWith("#")) || "";
+  const ctaLine = lines.find(l => l.startsWith("👉")) || "";
+  const captionLines = lines.filter(l => l !== hookLine && !l.startsWith("#") && !l.startsWith("👉"));
+  const captionText = captionLines.join(" ").trim();
+
   return (
     <div className="bg-white rounded-xl overflow-hidden text-black max-w-[380px] shadow-lg border border-gray-200">
       {/* Header */}
@@ -97,10 +105,31 @@ function InstagramPreview({ content, images }: { content: string; images: string
           <span>💬</span>
           <span>📤</span>
         </div>
-        <p className="text-[13px] leading-[1.4]">
-          <span className="font-semibold">loraloop.ai </span>
-          {content.length > 125 ? content.slice(0, 125) + "...more" : content}
-        </p>
+        {/* Hook */}
+        {hookLine && (
+          <p className="text-[13px] font-bold leading-[1.4] mb-1">
+            <span className="font-semibold">loraloop.ai </span>
+            {hookLine}
+          </p>
+        )}
+        {/* Caption */}
+        {captionText && (
+          <p className="text-[13px] leading-[1.4] text-gray-700 mb-1.5">
+            {captionText.length > 125 ? captionText.slice(0, 125) + "...more" : captionText}
+          </p>
+        )}
+        {/* CTA */}
+        {ctaLine && (
+          <p className="text-[13px] font-bold text-blue-600 mb-1.5">
+            {ctaLine}
+          </p>
+        )}
+        {/* Hashtags */}
+        {hashtagLine && (
+          <p className="text-[12px] text-blue-500 leading-[1.3]">
+            {hashtagLine.length > 100 ? hashtagLine.slice(0, 100) + "..." : hashtagLine}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -149,6 +178,11 @@ const PREVIEW_MAP: Record<string, React.FC<{ content: string; images: string[] }
 };
 
 export default function PlatformPreview({ content, platforms, images }: PlatformPreviewProps) {
+  // Filter out invalid image URLs (emoji placeholders from localStorage, empty strings)
+  const validImages = (images || []).filter(img =>
+    img && img.length > 5 && (img.startsWith("data:image/") || img.startsWith("http") || img.startsWith("/"))
+  );
+
   const selectedPlatformData = DEFAULT_PLATFORMS.filter((p) =>
     platforms.includes(p.id)
   );
@@ -186,7 +220,7 @@ export default function PlatformPreview({ content, platforms, images }: Platform
                   {platform.name}
                 </span>
               </div>
-              <PreviewComponent content={content} images={images} />
+              <PreviewComponent content={content} images={validImages} />
             </div>
           );
         })}

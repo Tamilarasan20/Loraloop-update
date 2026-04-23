@@ -125,7 +125,7 @@ function GenerateContent() {
             <Loader2 className="w-6 h-6 text-[#444a44] animate-spin" />
           </div>
           <iframe 
-            src={url || ""} 
+            src={`/api/proxy?url=${encodeURIComponent(url || "")}`} 
             className="absolute inset-0 w-full h-full object-cover z-10 bg-white"
             sandbox="allow-scripts allow-same-origin"
             loading="lazy"

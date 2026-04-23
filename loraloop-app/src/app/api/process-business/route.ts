@@ -135,6 +135,11 @@ async function runPipeline(baseUrl: string, websiteUrl: string, businessId: stri
         scraped_data: scrapedData,
         enriched_data: enrichedData,
         brand_guidelines: brandGuidelines,
+        brand_memory: {
+          visual_identity: dna.visual_identity || {},
+          brand_voice: dna.brand_voice || {},
+          content_patterns: dna.content_patterns || {},
+        },
         business_profile: docs.businessProfile || 'No business profile generated.',
         market_research: docs.marketResearch || 'No market research generated.',
         social_strategy: docs.strategy || 'No social strategy generated.',

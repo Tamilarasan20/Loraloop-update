@@ -40,5 +40,8 @@ export const localDb = {
     db[id] = { ...db[id], ...updates };
     writeDb(db);
     return { data: db[id], error: null };
+  },
+  getAll: () => {
+    return readDb();
   }
 };

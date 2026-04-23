@@ -5,6 +5,14 @@ import { Image as ImageIcon, Video, X, Smile, Hash, AtSign } from "lucide-react"
 import PlatformSelector, { DEFAULT_PLATFORMS } from "./PlatformSelector";
 
 interface PostComposerProps {
+  content: string;
+  setContent: (content: string) => void;
+  selectedPlatforms: string[];
+  setSelectedPlatforms: (platforms: string[]) => void;
+  images: File[];
+  setImages: (images: File[]) => void;
+  imagePreviews: string[];
+  setImagePreviews: (previews: string[]) => void;
   onPublish?: (data: ComposerData) => void;
   onSchedule?: (data: ComposerData, date: string) => void;
   onSaveDraft?: (data: ComposerData) => void;
@@ -18,17 +26,18 @@ export interface ComposerData {
 }
 
 export default function PostComposer({
+  content,
+  setContent,
+  selectedPlatforms,
+  setSelectedPlatforms,
+  images,
+  setImages,
+  imagePreviews,
+  setImagePreviews,
   onPublish,
   onSchedule,
   onSaveDraft,
 }: PostComposerProps) {
-  const [content, setContent] = useState("");
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([
-    "x-1",
-    "linkedin-1",
-  ]);
-  const [images, setImages] = useState<File[]>([]);
-  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [scheduleDate, setScheduleDate] = useState("");
   const [showScheduler, setShowScheduler] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);

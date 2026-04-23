@@ -1,12 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 
 export default function Home() {
   const [url, setUrl] = useState("");
   const router = useRouter();
+
+  useEffect(() => {
+    const savedId = localStorage.getItem("approvedBusinessId");
+    if (savedId) {
+      router.push(`/chat?id=${savedId}`);
+    }
+  }, [router]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

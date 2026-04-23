@@ -8,9 +8,11 @@ import PlatformPreview from "../../../components/social/PlatformPreview";
 
 export default function CreateCampaignPage() {
   const [content, setContent] = useState("");
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["x-1", "linkedin-1"]);
+  const [images, setImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [publishStatus, setPublishStatus] = useState<"idle" | "publishing" | "success" | "error">("idle");
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const handlePublish = async (data: ComposerData) => {
     setPublishStatus("publishing");
@@ -51,6 +53,47 @@ export default function CreateCampaignPage() {
       createdAt: new Date().toISOString(),
     });
     localStorage.setItem("postDrafts", JSON.stringify(drafts));
+  };
+
+  const handleGenerateWithAI = async () => {
+    setIsGenerating(true);
+    try {
+      // 1. Generate text copy based on brand DNA
+      const contentRes = await fetch("/api/generate-content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // Hardcoded generic prompt for the demo, should use actual business ID from URL or context in production
+        body: JSON.stringify({
+          businessId: "betternaturetempeh", // using a demo id or pass dynamic id
+          prompt: "Write a high-converting, punchy social media post launching our newest flavor. Make it highly engaging.",
+        }),
+      });
+      
+      const contentData = await contentRes.json();
+      if (contentData.content) {
+        setContent(contentData.content);
+        
+        // 2. Generate accompanying image using Imagen 3
+        const imageRes = await fetch("/api/generate-media", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: `A highly professional, aesthetically pleasing, brand-aligned product lifestyle photo. Concept: ${contentData.content.slice(0, 100)}`,
+            type: "image"
+          })
+        });
+
+        const imageData = await imageRes.json();
+        if (imageData.mediaUrl) {
+          // In a real scenario, we'd convert base64 to File object for uploading, but previews work fine with data URL
+          setImagePreviews(prev => [...prev, imageData.mediaUrl]);
+        }
+      }
+    } catch (err) {
+      console.error("AI Generation failed:", err);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -97,6 +140,14 @@ export default function CreateCampaignPage() {
         {/* Left Column: Composer */}
         <div className="flex-1 min-w-0">
           <PostComposer
+            content={content}
+            setContent={setContent}
+            selectedPlatforms={selectedPlatforms}
+            setSelectedPlatforms={setSelectedPlatforms}
+            images={images}
+            setImages={setImages}
+            imagePreviews={imagePreviews}
+            setImagePreviews={setImagePreviews}
             onPublish={handlePublish}
             onSchedule={handleSchedule}
             onSaveDraft={handleSaveDraft}
@@ -115,9 +166,22 @@ export default function CreateCampaignPage() {
 
               {/* AI Content Suggestion */}
               <div className="mt-6 pt-6 border-t border-white/5">
-                <button className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#C1CD7D]/20 to-[#8fa37a]/20 text-[#C1CD7D] px-5 py-3.5 rounded-2xl font-semibold text-[14px] hover:from-[#C1CD7D]/30 hover:to-[#8fa37a]/30 transition-all border border-[#C1CD7D]/20">
-                  <Sparkles className="w-4 h-4" />
-                  Generate with AI
+                <button 
+                  onClick={handleGenerateWithAI}
+                  disabled={isGenerating}
+                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#C1CD7D]/20 to-[#8fa37a]/20 text-[#C1CD7D] px-5 py-3.5 rounded-2xl font-semibold text-[14px] hover:from-[#C1CD7D]/30 hover:to-[#8fa37a]/30 transition-all border border-[#C1CD7D]/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isGenerating ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-[#C1CD7D] border-t-transparent rounded-full animate-spin" />
+                      Generating Magic...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      Generate with AI
+                    </>
+                  )}
                 </button>
                 <p className="text-[11px] text-[#9A9A9C] text-center mt-3">
                   Uses your Brand DNA to generate on-brand content
