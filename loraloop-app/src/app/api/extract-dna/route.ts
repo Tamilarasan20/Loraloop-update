@@ -12,134 +12,274 @@ function normalizeUrl(raw: string): string {
   return u;
 }
 
+// Reject tracking pixels, icons, placeholder services, and tiny junk
 function isUsefulImage(src: string): boolean {
   if (!src || src.length < 10) return false;
-  // Reject srcset strings — they contain spaces + dimension descriptors
-  if (/\s+\d+(\.\d+)?[wx]/.test(src)) return false;
-  // Reject strings with multiple URLs (srcset format)
-  if (/,\s*https?:\/\//.test(src)) return false;
-  // Must be a clean single URL (no unencoded spaces)
+  if (/\s+\d+(\.\d+)?[wx]/.test(src)) return false;  // srcset string
+  if (/,\s*https?:\/\//.test(src)) return false;       // multi-url srcset
   if (src.includes(" ")) return false;
+
   const lower = src.toLowerCase();
 
-  // Tracking pixels & analytics
-  const junk = [
+  const hardReject = [
     "pixel", "track", "analytics", "beacon", "1x1", "spacer",
     "facebook.com/tr", "google-analytics", "doubleclick",
-    "googletagmanager", "hotjar", ".gif", "data:image/gif",
+    "googletagmanager", "hotjar", "data:image/gif",
     "data:image/svg+xml", "gravatar", "wp-emoji",
-    "wpcf7", "spinner", "loading.gif",
+    "wpcf7", "spinner", "loading.gif", "recaptcha",
+    "cloudflare", "captcha",
   ];
-  if (junk.some((j) => lower.includes(j))) return false;
+  if (hardReject.some((j) => lower.includes(j))) return false;
 
-  // Placeholder image services
   const placeholders = [
     "placeholder.com", "via.placeholder.com", "placeimg.com",
     "placekitten.com", "dummyimage.com", "loremflickr.com",
     "lorempixel.com", "imagefor.me", "placeholder.pics",
+    "picsum.photos",
   ];
   if (placeholders.some((p) => lower.includes(p))) return false;
 
-  // Generic CDN images (often watermarks, logos)
-  if (/\/(logo|watermark|badge|stamp|copyright|©)/i.test(lower)) return false;
-  if (lower.endsWith(".ico") && !lower.includes("logo")) return false;
-  if (/\/(icon|favicon|sprite|arrow|chevron|check|star|dot|close|menu|hamburger|button|btn)/i.test(lower)) return false;
+  // Reject tiny dimension hints (< 50px)
+  const dimMatch = src.match(/[_\-x](\d+)x(\d+)/i);
+  if (dimMatch) {
+    const w = parseInt(dimMatch[1]), h = parseInt(dimMatch[2]);
+    if (w < 50 && h < 50) return false;
+  }
+  const wParam = src.match(/[?&](?:w|width)=(\d+)/i);
+  if (wParam && parseInt(wParam[1]) < 50) return false;
+
+  if (lower.endsWith(".ico")) return false;
+  if (/\/(favicon|sprite)\b/i.test(lower)) return false;
+  if (/\/(icon|arrow|chevron|check|star|dot|close|menu|hamburger|button|btn)\//i.test(lower)) return false;
 
   return true;
 }
 
-// Normalize image URL to detect duplicates from srcset variants
-// e.g. image-300x200.jpg and image-1200x800.jpg → same base image
+// Strip CDN size params so different sizes of the same image deduplicate
 function normalizeImageUrl(src: string): string {
   try {
     const u = new URL(src);
-    // Remove common CDN size params
-    ["w", "h", "width", "height", "size", "q", "quality", "fit", "resize", "scale", "format", "auto", "fm"].forEach((p) => u.searchParams.delete(p));
-    // Strip WP-style dimension suffixes: -300x200, _300x200, @2x, -scaled, -large, -medium, -small, -thumbnail
+    ["w", "h", "width", "height", "size", "q", "quality", "fit",
+      "resize", "scale", "format", "auto", "fm", "crop", "dpr"].forEach((p) => u.searchParams.delete(p));
     let path = u.pathname
-      .replace(/-\d+x\d+(\.[a-zA-Z]+)$/, "$1")       // -300x200.jpg
-      .replace(/_\d+x\d+(\.[a-zA-Z]+)$/, "$1")       // _300x200.jpg
-      .replace(/@[0-9.]+x(\.[a-zA-Z]+)$/, "$1")      // @2x.png
-      .replace(/-(scaled|large|medium|small|thumbnail|full|crop)(\.[a-zA-Z]+)$/, "$2") // -scaled.jpg
-      .replace(/\/(w_\d+|h_\d+|c_\w+|f_\w+|q_\w+),?/g, "/"); // Cloudinary segments
+      .replace(/-\d+x\d+(\.[a-zA-Z]+)$/, "$1")
+      .replace(/_\d+x\d+(\.[a-zA-Z]+)$/, "$1")
+      .replace(/@[0-9.]+x(\.[a-zA-Z]+)$/, "$1")
+      .replace(/-(scaled|large|medium|small|thumbnail|full|crop|original)(\.[a-zA-Z]+)$/, "$2")
+      .replace(/\/(w_\d+|h_\d+|c_\w+|f_\w+|q_\w+|ar_\w+),?/g, "/")
+      .replace(/\/\/+/g, "/");
     u.pathname = path;
-    return u.origin + u.pathname; // Drop query entirely for dedup key
+    return u.origin + u.pathname;
   } catch {
     return src;
   }
 }
 
+// Extract the highest-resolution URL from a srcset string
+function pickBestFromSrcset(srcset: string): string[] {
+  const results: string[] = [];
+  if (!srcset) return results;
+  srcset.split(",").forEach((entry) => {
+    const parts = entry.trim().split(/\s+/);
+    if (parts[0]) results.push(parts[0]);
+  });
+  return results;
+}
+
 // ────────────────────────────────────────────────────────────────
-// DEEP PAGE SCRAPER
+// SCORING — higher = better quality / more useful image
+// ────────────────────────────────────────────────────────────────
+
+function scoreImage(u: string): number {
+  const lower = u.toLowerCase();
+  let score = 0;
+
+  // Dimension hints in the URL
+  const dimMatch = u.match(/[_\-](\d{3,4})x(\d{3,4})/i);
+  if (dimMatch) {
+    const w = parseInt(dimMatch[1]), h = parseInt(dimMatch[2]);
+    if (w >= 1600 || h >= 1600) score += 40;
+    else if (w >= 1200 || h >= 1200) score += 30;
+    else if (w >= 800  || h >= 800)  score += 20;
+    else if (w >= 400  || h >= 400)  score += 8;
+    else score -= 15;
+  }
+
+  // Query-string width hints
+  const wMatch = u.match(/[?&](?:w|width|imwidth|imageWidth)=(\d+)/i);
+  if (wMatch) {
+    const w = parseInt(wMatch[1]);
+    if (w >= 1600) score += 35;
+    else if (w >= 1200) score += 25;
+    else if (w >= 800)  score += 15;
+    else if (w >= 400)  score += 5;
+    else if (w < 200)   score -= 25;
+  }
+
+  // Modern formats preferred
+  if (/\.(webp|avif)(\?|$)/i.test(u)) score += 5;
+
+  // High-value path keywords
+  if (/\/(product|hero|banner|feature|gallery|portfolio|campaign|lifestyle|collection|look|editorial|showcase|flagship)/i.test(lower)) score += 20;
+  if (/\/(about|brand|identity|team|story|culture|history)/i.test(lower)) score += 12;
+  if (/\/(images?|img|media|photos?|assets?|uploads?|static|content)\//i.test(lower)) score += 5;
+  if (/zoom|retina|highres|fullsize|full[_\-]?size|hi[_\-]?res|@2x|@3x|original/i.test(lower)) score += 18;
+
+  // Social/OG images are always high quality
+  if (/og[_\-]?image|social[_\-]?share|opengraph/i.test(lower)) score += 25;
+
+  // Penalise thumbnails and small variants
+  if (/thumbnail|thumb|\bsmall\b|\bmini\b|[_\-]sm[_\-]|[_\-]xs[_\-]|\bpreview\b/i.test(lower)) score -= 25;
+  if (/[_\-](50|75|80|100|120|150)x/i.test(u)) score -= 20;
+  if (/icon|sprite|arrow|check|star|dot|close|menu|placeholder/i.test(lower)) score -= 30;
+
+  // Cloudinary / imgix transforms that target small sizes
+  if (/[,/]w_(\d+)[,/]/i.test(u)) {
+    const m = u.match(/[,/]w_(\d+)[,/]/i);
+    if (m && parseInt(m[1]) < 300) score -= 20;
+    else if (m && parseInt(m[1]) >= 800) score += 15;
+  }
+
+  return score;
+}
+
+// ────────────────────────────────────────────────────────────────
+// SCROLL & INTERACTION
 // ────────────────────────────────────────────────────────────────
 
 async function autoScroll(page: Page) {
   await page.evaluate(async () => {
     await new Promise<void>((resolve) => {
       let totalHeight = 0;
-      let previousHeight = 0;
-      let noNewImagesCount = 0;
-      const distance = 800;
-      const maxNoNewImages = 3; // Stop if no new images after 3 scrolls
+      let lastImgCount = 0;
+      let stallCount = 0;
+      const distance = 600;
+      const maxStalls = 5;    // stop after 5 consecutive scrolls with no new images
+      const maxHeight = 25000; // absolute safety cap
 
       const timer = setInterval(() => {
-        const currentImgCount = document.querySelectorAll('img').length;
+        const currentImgCount = document.querySelectorAll("img, [style*='background-image']").length;
         window.scrollBy(0, distance);
         totalHeight += distance;
 
-        // Check for infinite scroll pattern (new images keep appearing)
-        // If image count doesn't increase, might be at end
-        if (currentImgCount === previousHeight) {
-          noNewImagesCount++;
+        if (currentImgCount === lastImgCount) {
+          stallCount++;
         } else {
-          noNewImagesCount = 0;
-          previousHeight = currentImgCount;
+          stallCount = 0;
+          lastImgCount = currentImgCount;
         }
 
-        // Stop conditions:
-        // 1. Reached actual end of DOM
-        // 2. Hit scrolling height limit
-        // 3. No new images detected (infinite scroll at end)
-        if (totalHeight >= document.body.scrollHeight ||
-            totalHeight > 8000 ||
-            noNewImagesCount >= maxNoNewImages) {
+        const atBottom = totalHeight + window.innerHeight >= document.body.scrollHeight;
+        if (atBottom || totalHeight > maxHeight || stallCount >= maxStalls) {
           clearInterval(timer);
           window.scrollTo(0, 0);
           resolve();
         }
-      }, 100);
+      }, 120);
+    });
+  });
+  // Scroll back slowly to trigger IntersectionObserver-based lazy loaders
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve) => {
+      const total = document.body.scrollHeight;
+      let pos = 0;
+      const step = 400;
+      const timer = setInterval(() => {
+        pos += step;
+        window.scrollTo(0, pos);
+        if (pos >= total) {
+          clearInterval(timer);
+          window.scrollTo(0, 0);
+          resolve();
+        }
+      }, 80);
     });
   });
 }
 
 async function dismissPopups(page: Page) {
   const selectors = [
-    // Cookie banners
     'button[id*="accept"]', 'button[id*="cookie"]', 'button[class*="accept"]',
     'button[class*="cookie"]', 'a[id*="accept"]', '[data-testid*="accept"]',
     'button[aria-label*="Accept"]', 'button[aria-label*="accept"]',
     'button[aria-label*="Close"]', 'button[aria-label*="close"]',
     'button[aria-label*="Dismiss"]',
-    // Generic close buttons on overlays
     '.modal-close', '.popup-close', '[class*="close-button"]',
     '[class*="dismiss"]', '[class*="consent"] button',
-    '#onetrust-accept-btn-handler',
-    '.cc-dismiss', '.cc-allow',
+    '#onetrust-accept-btn-handler', '.cc-dismiss', '.cc-allow',
+    '[data-cookie-accept]', '.gdpr-accept', '[class*="gdpr"] button',
   ];
   for (const sel of selectors) {
     try {
       const btn = page.locator(sel).first();
-      if (await btn.isVisible({ timeout: 300 })) {
-        await btn.click({ timeout: 500 });
-        await page.waitForTimeout(300);
+      if (await btn.isVisible({ timeout: 250 })) {
+        await btn.click({ timeout: 400 });
+        await page.waitForTimeout(250);
       }
-    } catch { /* expected — most won't exist */ }
+    } catch { /* expected */ }
   }
 }
 
+async function clickCarousels(page: Page): Promise<void> {
+  const nextSelectors = [
+    '[class*="slick-next"]', '[class*="swiper-next"]', '[class*="carousel-next"]',
+    '[class*="arrow-next"]', '[class*="arrow-right"]', '[data-slide="next"]',
+    '[aria-label="Next"]', '[aria-label="Next slide"]', '[aria-label="next"]',
+    'button[class*="next"]', '[class*="owl-next"]', '[class*="flickity-next"]',
+    '[class*="glide__arrow--right"]', '[data-controls="next"]',
+    '[class*="splide__arrow--next"]', '[class*="embla__next"]',
+  ];
+
+  for (const sel of nextSelectors) {
+    try {
+      const btns = page.locator(sel);
+      const count = await btns.count();
+      for (let b = 0; b < Math.min(count, 6); b++) {
+        const btn = btns.nth(b);
+        if (!(await btn.isVisible({ timeout: 200 }))) continue;
+        let clicks = 0;
+        while (clicks < 20) {
+          const isDisabled = await btn.evaluate((el: Element) =>
+            (el as HTMLButtonElement).disabled ||
+            el.getAttribute("aria-disabled") === "true" ||
+            el.classList.contains("disabled") ||
+            el.classList.contains("is-disabled")
+          );
+          if (isDisabled) break;
+          try { await btn.click({ timeout: 300 }); } catch { break; }
+          await page.waitForTimeout(150);
+          clicks++;
+        }
+      }
+    } catch { /* carousel absent */ }
+  }
+
+  // Trigger tab panels and accordions to expose hidden images
+  const tabSelectors = [
+    '[role="tab"]', '[class*="tab-item"]', '[class*="tab-link"]',
+    '[class*="accordion"] button', '[data-toggle="collapse"]',
+  ];
+  for (const sel of tabSelectors) {
+    try {
+      const tabs = page.locator(sel);
+      const count = await tabs.count();
+      for (let i = 0; i < Math.min(count, 8); i++) {
+        try {
+          await tabs.nth(i).click({ timeout: 300 });
+          await page.waitForTimeout(200);
+        } catch { /* skip */ }
+      }
+    } catch { /* absent */ }
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+// MAIN DOM SCRAPER — runs inside the browser context
+// ────────────────────────────────────────────────────────────────
+
 async function scrapePage(page: Page) {
   return page.evaluate(() => {
-    // ── Helpers ──
+    // ── helpers ──
     const rgb2hex = (rgb: string) => {
       const m = rgb.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
       if (!m) return rgb;
@@ -149,294 +289,407 @@ async function scrapePage(page: Page) {
     const seenSrcs = new Set<string>();
     const images: string[] = [];
 
-    // Extracts the first clean URL from a potential srcset string or plain URL
-    const extractCleanUrl = (raw: string): string => {
-      const s = raw.trim();
-      // Srcset strings look like "url1 1024w, url2 600w" or "url1 2x, url2 1x"
-      // They contain space + digit + w/x or a comma followed by a URL
-      if (/\s+\d+(\.\d+)?[wx]/.test(s) || /,\s*https?:\/\//.test(s)) {
-        // Parse as srcset — take the LARGEST resolution (first entry by width or last by order)
-        const candidates = s.split(",")
-          .map((entry: string) => entry.trim().split(/\s+/)[0])
-          .filter((u: string) => u.startsWith("http") || u.startsWith("//"));
-        // Prefer the widest (entries sorted ascending by "Nw" — last = biggest)
-        return candidates[candidates.length - 1] || "";
-      }
-      return s;
-    };
-
-    const addImg = (src: string | null | undefined) => {
+    const addImg = (src: string | null | undefined, base?: string) => {
       if (!src) return;
-      let s = extractCleanUrl(src);
+      let s = src.trim();
+      // Handle srcset-style strings
+      if (/\s+\d+(\.\d+)?[wx]/.test(s) || /,\s*https?:\/\//.test(s)) {
+        s.split(",").forEach((entry) => {
+          const u = entry.trim().split(/\s+/)[0];
+          if (u) addImg(u, base);
+        });
+        return;
+      }
       if (s.startsWith("//")) s = "https:" + s;
-      if (s && !seenSrcs.has(s) && s.startsWith("http") && !s.includes(" ")) {
+      if (s.startsWith("/") && !s.startsWith("//") && base) {
+        try { s = new URL(s, base || document.baseURI).href; } catch { return; }
+      }
+      if (!s.startsWith("http")) return;
+      if (s.includes(" ")) return;
+      if (!seenSrcs.has(s)) {
         seenSrcs.add(s);
         images.push(s);
       }
     };
 
-    // ── LOGO — 10-strategy detection ──
+    const base = document.baseURI;
+
+    // ══════════════════════════════════════════════════════════
+    // LOGO DETECTION (10 strategies)
+    // ══════════════════════════════════════════════════════════
     let logoUrl = "";
 
-    // 1. <img> or <svg> inside <header>, <nav>, or first section with logo/brand class/id/alt
     const headerAreas = document.querySelectorAll("header, nav, [class*='header'], [class*='navbar'], [id*='header'], [id*='nav']");
     for (const area of Array.from(headerAreas)) {
       if (logoUrl) break;
-      // Check img inside header
-      const imgs = area.querySelectorAll("img");
-      for (const img of Array.from(imgs)) {
+      for (const img of Array.from(area.querySelectorAll("img"))) {
         const combined = (img.src + img.alt + img.className + img.id).toLowerCase();
-        if (combined.includes("logo") || combined.includes("brand") || img.closest("a[href='/']") || img.closest("a[href='./']")) {
+        if (combined.includes("logo") || combined.includes("brand") || img.closest("a[href='/']")) {
           logoUrl = img.src || img.getAttribute("data-src") || "";
           break;
         }
       }
-      // Check SVG inside header that might be a logo
       if (!logoUrl) {
-        const svgs = area.querySelectorAll("svg");
-        for (const svg of Array.from(svgs)) {
+        for (const svg of Array.from(area.querySelectorAll("svg"))) {
           const parent = svg.closest("a");
           if (parent && (parent.getAttribute("href") === "/" || parent.getAttribute("href") === "./")) {
-            // It's an SVG logo linked to home — serialize it as data URI
-            const svgStr = new XMLSerializer().serializeToString(svg);
-            logoUrl = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgStr)));
-            break;
-          }
-          const cls = (svg.getAttribute("class") || "") + (svg.getAttribute("id") || "");
-          if (cls.toLowerCase().includes("logo")) {
-            const svgStr = new XMLSerializer().serializeToString(svg);
-            logoUrl = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgStr)));
-            break;
+            try {
+              const svgStr = new XMLSerializer().serializeToString(svg);
+              logoUrl = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgStr)));
+              break;
+            } catch { /* skip */ }
           }
         }
       }
     }
-
-    // 2. Any <img> on page with "logo" in src/alt/class/id
     if (!logoUrl) {
-      const allImgs = document.querySelectorAll("img");
-      for (const img of Array.from(allImgs)) {
+      for (const img of Array.from(document.querySelectorAll("img"))) {
         const combined = (img.src + img.alt + img.className + img.id + (img.getAttribute("data-src") || "")).toLowerCase();
         if (combined.includes("logo") || combined.includes("brand-mark")) {
-          logoUrl = img.src || img.getAttribute("data-src") || "";
-          break;
+          logoUrl = img.src || img.getAttribute("data-src") || ""; break;
         }
       }
     }
-
-    // 3. First image inside a link to homepage
     if (!logoUrl) {
-      const homeLinks = document.querySelectorAll('a[href="/"], a[href="./"], a[href*="index"]');
-      for (const link of Array.from(homeLinks)) {
+      for (const link of Array.from(document.querySelectorAll('a[href="/"], a[href="./"]'))) {
         const img = link.querySelector("img");
-        if (img && img.src) { logoUrl = img.src; break; }
+        if (img?.src) { logoUrl = img.src; break; }
       }
     }
-
-    // 4. apple-touch-icon
     if (!logoUrl) {
       const apple = document.querySelector('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]');
       if (apple) logoUrl = (apple as HTMLLinkElement).href;
     }
-
-    // 5. OG image
     if (!logoUrl) {
       const og = document.querySelector('meta[property="og:image"]');
       if (og) logoUrl = (og as HTMLMetaElement).content;
     }
-
-    // 6. Favicon
     if (!logoUrl) {
       const icon = document.querySelector('link[rel="icon"], link[rel="shortcut icon"]');
       if (icon) logoUrl = (icon as HTMLLinkElement).href;
     }
-
-    // 7. manifest.json icons (just get the href for now)
     if (!logoUrl) {
       const manifest = document.querySelector('link[rel="manifest"]');
-      if (manifest) {
-        // We'll handle this on the server side
-        logoUrl = "__MANIFEST__:" + (manifest as HTMLLinkElement).href;
-      }
+      if (manifest) logoUrl = "__MANIFEST__:" + (manifest as HTMLLinkElement).href;
     }
 
-    // ── SOCIAL MEDIA META TAGS — high-quality images ──
-    // Strategy 0.5: Open Graph & Twitter Cards
+    // ══════════════════════════════════════════════════════════
+    // STRATEGY 1 — Social / OG / Twitter meta tags (highest quality)
+    // ══════════════════════════════════════════════════════════
     const socialImages: string[] = [];
-
-    // Open Graph images (og:image, og:image:secure_url with optional dimensions)
-    document.querySelectorAll('meta[property="og:image"], meta[property="og:image:secure_url"]')
-      .forEach((tag) => {
+    const metaSelectors = [
+      'meta[property="og:image"]',
+      'meta[property="og:image:secure_url"]',
+      'meta[name^="twitter:image"]',
+      'meta[property="pinterest:media"]',
+      'meta[name="thumbnail"]',
+      'meta[itemprop="image"]',
+      'meta[property="og:image:url"]',
+    ];
+    for (const sel of metaSelectors) {
+      document.querySelectorAll(sel).forEach((tag) => {
         const url = (tag as HTMLMetaElement).content;
-        if (url && url.startsWith("http")) socialImages.push(url);
+        if (url?.startsWith("http")) socialImages.push(url);
       });
+    }
+    // <link rel="image_src"> — used by some CMSs
+    document.querySelectorAll('link[rel="image_src"]').forEach((l) => {
+      const href = (l as HTMLLinkElement).href;
+      if (href?.startsWith("http")) socialImages.push(href);
+    });
+    // <link rel="preload" as="image"> — browser hint for hero images
+    document.querySelectorAll('link[rel="preload"][as="image"]').forEach((l) => {
+      const href = (l as HTMLLinkElement).href;
+      if (href?.startsWith("http")) socialImages.push(href);
+      const imagesrcset = l.getAttribute("imagesrcset");
+      if (imagesrcset) {
+        imagesrcset.split(",").forEach((entry) => {
+          const u = entry.trim().split(/\s+/)[0];
+          try { socialImages.push(new URL(u, base).href); } catch { /* skip */ }
+        });
+      }
+    });
 
-    // Twitter Card images
-    document.querySelectorAll('meta[name^="twitter:image"]')
-      .forEach((tag) => {
-        const url = (tag as HTMLMetaElement).content;
-        if (url && url.startsWith("http")) socialImages.push(url);
-      });
-
-    // Pinterest Rich Pin images
-    document.querySelectorAll('meta[property="pinterest:media"]')
-      .forEach((tag) => {
-        const url = (tag as HTMLMetaElement).content;
-        if (url && url.startsWith("http")) socialImages.push(url);
-      });
-
-    // ── IMAGES — aggressive multi-source capture ──
-
-    // Strategy 1: All <img> tags with every lazy-load attribute variant
-    // NOTE: data-srcset is intentionally excluded — handled by the srcset block below
+    // ══════════════════════════════════════════════════════════
+    // STRATEGY 2 — All <img> tags with every lazy-load attribute
+    // ══════════════════════════════════════════════════════════
     const lazyAttrs = [
-      "src", "data-src", "data-lazy-src", "data-original", "data-lazy", "data-image",
-      "data-bg", "data-full", "data-hi-res", "loading-src",
-      // Extended: WooCommerce, Magento, custom lazy loaders
+      "src", "data-src", "data-lazy-src", "data-original", "data-lazy",
+      "data-image", "data-bg", "data-full", "data-hi-res", "loading-src",
       "data-src-lg", "data-src-large", "data-lazy-load", "data-url",
       "data-img-src", "data-imgurl", "data-thumb", "data-large-file",
+      "data-orig-file", "data-medium-file", "data-full-url", "data-natural-src",
+      "data-zoom-src", "data-big", "data-highres", "data-retina",
+      "data-normal", "data-2x", "data-hi", "data-full-size",
     ];
     for (const img of Array.from(document.querySelectorAll("img"))) {
       for (const attr of lazyAttrs) {
         const val = img.getAttribute(attr);
-        if (!val) continue;
-        if (val.startsWith("http") || val.startsWith("//")) {
-          addImg(val);
-        } else if (val.startsWith("/")) {
-          try { addImg(new URL(val, document.baseURI).href); } catch { /* skip */ }
+        if (val) addImg(val, base);
+      }
+      // srcset variants
+      for (const attr of ["srcset", "data-srcset", "data-sizes"]) {
+        const srcset = img.getAttribute(attr);
+        if (srcset) {
+          srcset.split(",").forEach((entry) => {
+            const u = entry.trim().split(/\s+/)[0];
+            if (u) try { addImg(new URL(u, base).href); } catch { addImg(u); }
+          });
         }
       }
-      // srcset + data-srcset — split properly, take LARGEST resolution
-      const srcset = img.getAttribute("srcset") || img.getAttribute("data-srcset");
-      if (srcset) {
-        srcset.split(",").forEach((entry: string) => {
-          const u = entry.trim().split(/\s+/)[0];
-          if (!u) return;
-          try { addImg(new URL(u, document.baseURI).href); } catch { addImg(u); }
-        });
-      }
+      // currentSrc (set by browser after responsive selection)
+      if ((img as HTMLImageElement).currentSrc) addImg((img as HTMLImageElement).currentSrc);
     }
 
-    // Strategy 2: <picture> > <source>
+    // ══════════════════════════════════════════════════════════
+    // STRATEGY 3 — <picture> <source> elements
+    // ══════════════════════════════════════════════════════════
     for (const source of Array.from(document.querySelectorAll("picture source"))) {
-      const srcset = source.getAttribute("srcset");
-      if (srcset) {
-        srcset.split(",").forEach((entry) => {
-          const url = entry.trim().split(/\s+/)[0];
-          try { addImg(new URL(url, document.baseURI).href); } catch { addImg(url); }
-        });
+      for (const attr of ["srcset", "data-srcset"]) {
+        const srcset = source.getAttribute(attr);
+        if (srcset) {
+          srcset.split(",").forEach((entry) => {
+            const u = entry.trim().split(/\s+/)[0];
+            try { addImg(new URL(u, base).href); } catch { addImg(u); }
+          });
+        }
       }
     }
 
-    // Strategy 3: <video> poster images
+    // ══════════════════════════════════════════════════════════
+    // STRATEGY 4 — Video poster images
+    // ══════════════════════════════════════════════════════════
     for (const video of Array.from(document.querySelectorAll("video[poster]"))) {
-      addImg(video.getAttribute("poster"));
+      addImg(video.getAttribute("poster"), base);
     }
 
-    // Strategy 4: CSS background-image on up to 300 elements
-    const allEls = [
-      document.body,
-      ...Array.from(document.querySelectorAll(
-        "header,footer,nav,main,section,article,aside,div,span,a,button,figure,h1,h2,h3,h4,h5,h6,p,[class*='hero'],[class*='banner'],[class*='slide'],[class*='bg'],[class*='image'],[class*='thumb'],[class*='card'],[class*='cover'],[class*='feature'],[style*='background']"
-      )),
-    ].slice(0, 600);
+    // ══════════════════════════════════════════════════════════
+    // STRATEGY 5 — CSS background-image (computed styles)
+    // ══════════════════════════════════════════════════════════
+    const cssTargets = Array.from(document.querySelectorAll(
+      "header,footer,nav,main,section,article,aside,div,span,a,button,figure,h1,h2,h3,h4,h5,h6,p,li," +
+      "[class*='hero'],[class*='banner'],[class*='slide'],[class*='bg'],[class*='image'],[class*='thumb']," +
+      "[class*='card'],[class*='cover'],[class*='feature'],[class*='gallery'],[class*='grid'],[class*='product']," +
+      "[style*='background']"
+    ));
 
     const colors = new Set<string>();
     const fonts = new Set<string>();
 
-    for (const el of allEls) {
+    for (const el of [document.body, ...cssTargets].slice(0, 800)) {
       try {
         const cs = window.getComputedStyle(el);
-        // Colors
         const bg = cs.backgroundColor;
         if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") colors.add(rgb2hex(bg));
-        const clr = cs.color;
-        if (clr) colors.add(rgb2hex(clr));
+        if (cs.color) colors.add(rgb2hex(cs.color));
         const border = cs.borderColor;
         if (border && border !== "rgba(0, 0, 0, 0)" && border !== "transparent" && border !== "rgb(0, 0, 0)") {
           colors.add(rgb2hex(border));
         }
-
-        // Fonts
         if (cs.fontFamily) {
           const primary = cs.fontFamily.split(",")[0].replace(/['"]/g, "").trim();
           if (primary && primary !== "inherit" && primary !== "initial") fonts.add(primary);
         }
-
-        // Background images
         const bgImg = cs.backgroundImage;
         if (bgImg && bgImg !== "none") {
-          const matches = bgImg.matchAll(/url\(["']?(.*?)["']?\)/g);
-          for (const m of matches) {
+          for (const m of bgImg.matchAll(/url\(["']?(.*?)["']?\)/g)) {
             if (m[1] && !m[1].startsWith("data:image/svg") && !m[1].startsWith("data:image/gif")) {
-              try { addImg(new URL(m[1], document.baseURI).href); } catch { addImg(m[1]); }
+              try { addImg(new URL(m[1], base).href); } catch { addImg(m[1]); }
             }
           }
         }
       } catch { /* skip */ }
     }
 
-    // Strategy 5: Inline style background-image attributes
+    // ══════════════════════════════════════════════════════════
+    // STRATEGY 6 — Inline style attributes background-image
+    // ══════════════════════════════════════════════════════════
     for (const el of Array.from(document.querySelectorAll("[style*='background']"))) {
       const style = el.getAttribute("style") || "";
-      const matches = style.matchAll(/url\(["']?(.*?)["']?\)/g);
-      for (const m of matches) {
-        try { addImg(new URL(m[1], document.baseURI).href); } catch { addImg(m[1]); }
+      for (const m of style.matchAll(/url\(["']?(.*?)["']?\)/g)) {
+        try { addImg(new URL(m[1], base).href); } catch { addImg(m[1]); }
+      }
+    }
+    // data-bg and data-background attributes
+    for (const attr of ["data-bg", "data-background", "data-background-image", "data-cover"]) {
+      for (const el of Array.from(document.querySelectorAll(`[${attr}]`))) {
+        const val = el.getAttribute(attr);
+        if (val) {
+          if (val.startsWith("http") || val.startsWith("/")) addImg(val, base);
+          // might be an inline style value
+          for (const m of val.matchAll(/url\(["']?(.*?)["']?\)/g)) {
+            try { addImg(new URL(m[1], base).href); } catch { addImg(m[1]); }
+          }
+        }
       }
     }
 
-    // Strategy 6: <figure>, <a> with image extensions in href
+    // ══════════════════════════════════════════════════════════
+    // STRATEGY 7 — <a href> linking directly to image files
+    // ══════════════════════════════════════════════════════════
     for (const a of Array.from(document.querySelectorAll("a[href]"))) {
       const href = (a as HTMLAnchorElement).href;
-      if (/\.(jpg|jpeg|png|webp|avif)(\?|$)/i.test(href)) addImg(href);
+      if (/\.(jpg|jpeg|png|webp|avif|gif)(\?|$)/i.test(href)) addImg(href);
     }
 
-    // Strategy 7: <noscript> fallback images — lazy-load implementations always put
-    // the real full-res src inside <noscript> so non-JS scrapers can find it
+    // ══════════════════════════════════════════════════════════
+    // STRATEGY 8 — <noscript> fallback (full-res behind lazy loaders)
+    // ══════════════════════════════════════════════════════════
     for (const ns of Array.from(document.querySelectorAll("noscript"))) {
       const raw = ns.textContent || "";
-      for (const m of raw.matchAll(/src=["']([^"']+)["']/g)) {
-        try { addImg(new URL(m[1], document.baseURI).href); } catch { addImg(m[1]); }
+      for (const m of raw.matchAll(/(?:src|data-src|data-lazy-src)=["']([^"']+)["']/g)) {
+        try { addImg(new URL(m[1], base).href); } catch { addImg(m[1]); }
+      }
+      for (const m of raw.matchAll(/srcset=["']([^"']+)["']/g)) {
+        m[1].split(",").forEach((entry) => {
+          const u = entry.trim().split(/\s+/)[0];
+          try { addImg(new URL(u, base).href); } catch { addImg(u); }
+        });
       }
     }
 
-    // Strategy 8: JSON-LD structured data — schema.org Product / ImageObject
+    // ══════════════════════════════════════════════════════════
+    // STRATEGY 9 — JSON-LD structured data (schema.org)
+    // ══════════════════════════════════════════════════════════
     for (const script of Array.from(document.querySelectorAll('script[type="application/ld+json"]'))) {
       try {
-        const walk = (obj: Record<string, unknown>): void => {
+        const walk = (obj: unknown): void => {
           if (!obj || typeof obj !== "object") return;
-          if (Array.isArray(obj)) { (obj as unknown[]).forEach(i => walk(i as Record<string, unknown>)); return; }
-          for (const [k, v] of Object.entries(obj)) {
-            if (["image", "url", "contentUrl", "thumbnailUrl"].includes(k) && typeof v === "string"
-              && /^https?:\/\//.test(v) && /\.(jpg|jpeg|png|webp|avif)/i.test(v)) {
+          if (Array.isArray(obj)) { (obj as unknown[]).forEach(i => walk(i)); return; }
+          for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+            if (
+              ["image", "url", "contentUrl", "thumbnailUrl", "photo", "logo"].includes(k) &&
+              typeof v === "string" && /^https?:\/\//.test(v)
+            ) {
               addImg(v);
-            } else if (v && typeof v === "object") walk(v as Record<string, unknown>);
+            } else if (v && typeof v === "object") {
+              walk(v);
+            }
           }
         };
-        walk(JSON.parse(script.textContent || ""));
+        walk(JSON.parse(script.textContent || "{}"));
       } catch { /* skip */ }
     }
 
-    // Strategy 9: Product zoom / high-res data attributes (WooCommerce, Shopify, Magento zoom plugins)
+    // ══════════════════════════════════════════════════════════
+    // STRATEGY 10 — Zoom / high-res product data attributes
+    // ══════════════════════════════════════════════════════════
     const zoomAttrs = [
       "data-zoom-image", "data-large", "data-full-src", "data-retina-src",
       "data-echo", "data-highres", "data-big", "data-photo",
       "data-original-src", "data-full-size-url", "data-zoom-src",
+      "data-gallery", "data-lightbox", "data-fancybox",
+      "data-mfp-src", "data-photoswipe-src",
     ];
-    const zoomSelector = zoomAttrs.map(a => `[${a}]`).join(",");
-    for (const el of Array.from(document.querySelectorAll(zoomSelector))) {
+    for (const el of Array.from(document.querySelectorAll(zoomAttrs.map(a => `[${a}]`).join(",")))) {
       for (const attr of zoomAttrs) {
         const val = el.getAttribute(attr);
-        if (val) { try { addImg(new URL(val, document.baseURI).href); } catch { addImg(val); } }
+        if (val) { try { addImg(new URL(val, base).href); } catch { addImg(val); } }
       }
     }
 
-    // ── TEXT — structured extraction ──
+    // ══════════════════════════════════════════════════════════
+    // STRATEGY 11 — <template> tags (Vue, Web Components)
+    // ══════════════════════════════════════════════════════════
+    for (const tpl of Array.from(document.querySelectorAll("template"))) {
+      try {
+        const content = tpl.content;
+        for (const img of Array.from(content.querySelectorAll("img"))) {
+          const s = img.getAttribute("src") || img.getAttribute("data-src");
+          if (s) addImg(s, base);
+        }
+      } catch { /* skip */ }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // STRATEGY 12 — Image maps (<map><area>)
+    // ══════════════════════════════════════════════════════════
+    for (const area of Array.from(document.querySelectorAll("area[href]"))) {
+      const href = (area as HTMLAreaElement).href;
+      if (/\.(jpg|jpeg|png|webp|avif)(\?|$)/i.test(href)) addImg(href);
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // STRATEGY 13 — Inline <style> blocks
+    // ══════════════════════════════════════════════════════════
+    for (const style of Array.from(document.querySelectorAll("style"))) {
+      const css = style.textContent || "";
+      for (const m of css.matchAll(/url\(["']?(https?:\/\/[^"')]+)["']?\)/g)) {
+        addImg(m[1]);
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // STRATEGY 14 — Extract from embedded JavaScript globals
+    //   (Next.js __NEXT_DATA__, Nuxt __NUXT__, custom window vars)
+    // ══════════════════════════════════════════════════════════
+    const walkJsonForImages = (obj: unknown, out: string[]) => {
+      if (!obj || typeof obj !== "object") return;
+      if (Array.isArray(obj)) { obj.forEach(i => walkJsonForImages(i, out)); return; }
+      for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+        if (
+          typeof v === "string" &&
+          /^https?:\/\/.+\.(jpg|jpeg|png|webp|avif)/i.test(v) &&
+          !["script", "html", "css", "js"].some(x => v.includes(x))
+        ) {
+          out.push(v);
+        } else if (v && typeof v === "object") {
+          walkJsonForImages(v, out);
+        }
+        void k;
+      }
+    };
+    for (const script of Array.from(document.querySelectorAll("script:not([src])"))) {
+      const text = script.textContent || "";
+      // Next.js __NEXT_DATA__
+      const nextMatch = text.match(/\b__NEXT_DATA__\s*=\s*(\{[\s\S]+?\});?\s*(?:$|<\/script>)/);
+      if (nextMatch) {
+        try {
+          const out: string[] = [];
+          walkJsonForImages(JSON.parse(nextMatch[1]), out);
+          out.forEach(u => addImg(u));
+        } catch { /* skip */ }
+      }
+      // Nuxt __NUXT__
+      const nuxtMatch = text.match(/\b__NUXT__\s*=\s*(\{[\s\S]+?\});?\s*(?:$|<\/script>)/);
+      if (nuxtMatch) {
+        try {
+          const out: string[] = [];
+          walkJsonForImages(JSON.parse(nuxtMatch[1]), out);
+          out.forEach(u => addImg(u));
+        } catch { /* skip */ }
+      }
+      // Generic JSON blobs containing image URLs
+      const jsonBlobs = text.matchAll(/\{[^{}]{50,}\}/g);
+      for (const blob of jsonBlobs) {
+        if (blob[0].includes(".jpg") || blob[0].includes(".png") || blob[0].includes(".webp")) {
+          try {
+            const out: string[] = [];
+            walkJsonForImages(JSON.parse(blob[0]), out);
+            out.slice(0, 20).forEach(u => addImg(u));
+          } catch { /* skip */ }
+        }
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // STRATEGY 15 — Figcaption / figure / item containers
+    //   (lightbox galleries that store full URL in data-href or similar)
+    // ══════════════════════════════════════════════════════════
+    for (const fig of Array.from(document.querySelectorAll("figure, [class*='gallery-item'], [class*='grid-item'], [class*='portfolio-item']"))) {
+      for (const attr of ["data-href", "data-src", "data-url", "data-full", "data-original"]) {
+        const val = fig.getAttribute(attr);
+        if (val && /\.(jpg|jpeg|png|webp|avif)/i.test(val)) addImg(val, base);
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // TEXT extraction
+    // ══════════════════════════════════════════════════════════
     const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute("content") || "";
     const ogDesc = document.querySelector('meta[property="og:description"]')?.getAttribute("content") || "";
     const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute("content") || "";
 
-    // Gather text from semantic elements, ordered by importance
     const textParts: string[] = [];
     if (ogTitle) textParts.push(ogTitle);
     if (metaDesc) textParts.push(metaDesc);
@@ -460,9 +713,7 @@ async function scrapePage(page: Page) {
       }
     }
 
-    // JSON-LD structured data
-    const jsonLd = document.querySelectorAll('script[type="application/ld+json"]');
-    for (const script of Array.from(jsonLd)) {
+    for (const script of Array.from(document.querySelectorAll('script[type="application/ld+json"]'))) {
       try {
         const data = JSON.parse(script.textContent || "");
         if (data.description) textParts.push(data.description);
@@ -473,13 +724,15 @@ async function scrapePage(page: Page) {
 
     const textSample = textParts.join(" | ").slice(0, 5000);
 
-    // ── INTERNAL LINKS — crawl ALL level-1 navigation links ──
+    // ══════════════════════════════════════════════════════════
+    // INTERNAL LINKS
+    // ══════════════════════════════════════════════════════════
     const baseHostname = window.location.hostname;
     const seenPaths = new Set<string>([window.location.pathname]);
     const internalLinks: string[] = [];
-    const skipPatterns = ["login", "signin", "signup", "register", "cart", "checkout", "account", "privacy", "terms", "cookie", "legal", "#", "mailto:", "tel:", "javascript:"];
+    const skipPatterns = ["login", "signin", "signup", "register", "cart", "checkout",
+      "account", "privacy", "terms", "cookie", "legal", "#", "mailto:", "tel:", "javascript:", "cdn-cgi"];
 
-    // Strategy 1: ALL links inside nav/header (primary navigation)
     const navAreas = document.querySelectorAll("nav, header, [role='navigation'], [class*='nav'], [class*='menu']");
     for (const area of Array.from(navAreas)) {
       for (const a of Array.from(area.querySelectorAll("a[href]"))) {
@@ -495,11 +748,10 @@ async function scrapePage(page: Page) {
         } catch { /* skip */ }
       }
     }
-
-    // Strategy 2: Any remaining same-domain links with useful paths (backup)
-    if (internalLinks.length < 6) {
+    // Fallback
+    if (internalLinks.length < 8) {
       for (const a of Array.from(document.querySelectorAll("a[href]"))) {
-        if (internalLinks.length >= 8) break;
+        if (internalLinks.length >= 12) break;
         try {
           const href = new URL((a as HTMLAnchorElement).href, document.baseURI);
           const path = href.pathname.toLowerCase();
@@ -513,112 +765,28 @@ async function scrapePage(page: Page) {
       }
     }
 
-    // Add social media images at the front (highest quality usually)
-    const allImages = [...socialImages, ...images];
-    const dedupedImages = Array.from(new Set(allImages));
+    // Social images at front (highest quality), then the rest
+    const allImages = [...new Set([...socialImages, ...images])];
 
     return {
       colors: Array.from(colors).filter((c) => c.startsWith("#")).slice(0, 25),
       fonts: Array.from(fonts).slice(0, 8),
       logoUrl,
-      images: dedupedImages.slice(0, 150),
+      images: allImages,
       textSample,
       pageTitle: document.title,
-      internalLinks: internalLinks.slice(0, 8),
+      internalLinks: internalLinks.slice(0, 12),
     };
   });
 }
 
 // ────────────────────────────────────────────────────────────────
-// E-COMMERCE API DETECTION & SCRAPING
-// ────────────────────────────────────────────────────────────────
-
-async function scrapeEcommerceApis(origin: string): Promise<string[]> {
-  const images: string[] = [];
-
-  // Shopify product API
-  try {
-    const shopifyRes = await fetch(`${origin}/products.json?limit=250`, {
-      signal: AbortSignal.timeout(6000),
-      headers: { "User-Agent": "Mozilla/5.0 (compatible)" },
-    });
-    if (shopifyRes.ok) {
-      const data = await shopifyRes.json();
-      if (data.products) {
-        for (const product of data.products.slice(0, 50)) {
-          if (product.images) {
-            for (const img of product.images.slice(0, 3)) {
-              if (img.src && isUsefulImage(img.src)) images.push(img.src);
-            }
-          }
-        }
-        console.log(`[extract-dna] 🛍 Shopify API: +${images.length} images`);
-      }
-    }
-  } catch { /* not shopify */ }
-
-  // WooCommerce REST API
-  if (images.length < 100) {
-    try {
-      const wcRes = await fetch(`${origin}/wp-json/wc/v3/products?per_page=100&_fields=id,images`, {
-        signal: AbortSignal.timeout(6000),
-        headers: { "User-Agent": "Mozilla/5.0 (compatible)" },
-      });
-      if (wcRes.ok) {
-        const products = await wcRes.json();
-        if (Array.isArray(products)) {
-          for (const product of products.slice(0, 50)) {
-            if (product.images) {
-              for (const img of product.images.slice(0, 2)) {
-                if (img.src && isUsefulImage(img.src)) images.push(img.src);
-              }
-            }
-          }
-          console.log(`[extract-dna] 🔧 WooCommerce API: +${images.length} images`);
-        }
-      }
-    } catch { /* not woo */ }
-  }
-
-  // Magento REST API
-  if (images.length < 100) {
-    try {
-      const magentoRes = await fetch(
-        `${origin}/rest/V1/products?searchCriteria[pageSize]=100&fields=items[id,media_gallery_entries]`,
-        {
-          signal: AbortSignal.timeout(6000),
-          headers: { "User-Agent": "Mozilla/5.0 (compatible)" },
-        }
-      );
-      if (magentoRes.ok) {
-        const data = await magentoRes.json();
-        if (data.items) {
-          for (const product of data.items.slice(0, 50)) {
-            if (product.media_gallery_entries) {
-              for (const media of product.media_gallery_entries.slice(0, 2)) {
-                if (media.file && isUsefulImage(media.file)) images.push(media.file);
-              }
-            }
-          }
-          console.log(`[extract-dna] 🏗 Magento API: +${images.length} images`);
-        }
-      }
-    } catch { /* not magento */ }
-  }
-
-  return images;
-}
-
-// ────────────────────────────────────────────────────────────────
-// IMAGE ENHANCEMENT — NETWORK, CAROUSEL, CSS, SITEMAP
+// E-COMMERCE + CMS API SCRAPERS
 // ────────────────────────────────────────────────────────────────
 
 function extractImagesFromJson(obj: unknown, results: string[]): void {
   if (!obj || typeof obj !== "object") return;
-  if (Array.isArray(obj)) {
-    for (const item of obj) extractImagesFromJson(item, results);
-    return;
-  }
+  if (Array.isArray(obj)) { for (const item of obj) extractImagesFromJson(item, results); return; }
   for (const value of Object.values(obj as Record<string, unknown>)) {
     if (typeof value === "string" && /https?:\/\/.+\.(jpg|jpeg|png|webp|avif)/i.test(value)) {
       if (isUsefulImage(value)) results.push(value);
@@ -628,71 +796,124 @@ function extractImagesFromJson(obj: unknown, results: string[]): void {
   }
 }
 
-async function clickCarousels(page: Page): Promise<void> {
-  const nextSelectors = [
-    '[class*="slick-next"]', '[class*="swiper-next"]', '[class*="carousel-next"]',
-    '[class*="arrow-next"]', '[class*="arrow-right"]', '[data-slide="next"]',
-    '[aria-label="Next"]', '[aria-label="Next slide"]', '[aria-label="next"]',
-    'button[class*="next"]', '[class*="owl-next"]', '[class*="flickity-next"]',
-  ];
+async function scrapeEcommerceApis(origin: string): Promise<string[]> {
+  const images: string[] = [];
+  const headers = { "User-Agent": "Mozilla/5.0 (compatible)" };
 
-  for (const sel of nextSelectors) {
-    try {
-      const btns = page.locator(sel);
-      const count = await btns.count();
-
-      for (let b = 0; b < Math.min(count, 5); b++) {
-        const btn = btns.nth(b);
-        if (await btn.isVisible({ timeout: 200 })) {
-          // Click until button is disabled (not aria-disabled or disabled attribute)
-          let clicks = 0;
-          const maxClicks = 12; // increased from 4 to handle longer carousels
-
-          while (clicks < maxClicks) {
-            const isDisabled = await btn.evaluate((el: Element) => {
-              return (el as HTMLButtonElement).disabled ||
-                     el.getAttribute('aria-disabled') === 'true' ||
-                     el.classList.contains('disabled');
-            });
-
-            if (isDisabled) break;
-
-            await btn.click({ timeout: 300 });
-            await page.waitForTimeout(200);
-            clicks++;
+  // ── Shopify
+  try {
+    const res = await fetch(`${origin}/products.json?limit=250`, { signal: AbortSignal.timeout(7000), headers });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.products) {
+        for (const product of data.products.slice(0, 100)) {
+          if (product.images) {
+            for (const img of product.images) {
+              if (img.src && isUsefulImage(img.src)) images.push(img.src);
+            }
           }
+          if (product.variants) {
+            for (const v of product.variants) {
+              if (v.featured_image?.src && isUsefulImage(v.featured_image.src)) images.push(v.featured_image.src);
+            }
+          }
+        }
+        console.log(`[extract-dna] 🛍 Shopify API: +${images.length} images`);
+      }
+    }
+  } catch { /* not shopify */ }
 
-          // Also try keyboard navigation (arrow keys) for some carousels
-          if (clicks < 3) {
-            try {
-              await btn.focus();
-              for (let k = 0; k < 3; k++) {
-                await page.keyboard.press('ArrowRight');
-                await page.waitForTimeout(200);
-              }
-            } catch { /* keyboard nav not supported */ }
+  // ── Shopify collections
+  if (images.length < 50) {
+    try {
+      const res = await fetch(`${origin}/collections.json?limit=50`, { signal: AbortSignal.timeout(5000), headers });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.collections) {
+          for (const col of data.collections) {
+            if (col.image?.src && isUsefulImage(col.image.src)) images.push(col.image.src);
           }
         }
       }
-    } catch { /* carousel not present */ }
+    } catch { /* skip */ }
   }
+
+  // ── WooCommerce
+  try {
+    const res = await fetch(`${origin}/wp-json/wc/v3/products?per_page=100&_fields=id,images`, { signal: AbortSignal.timeout(7000), headers });
+    if (res.ok) {
+      const products = await res.json();
+      if (Array.isArray(products)) {
+        for (const product of products.slice(0, 100)) {
+          if (product.images) {
+            for (const img of product.images) {
+              if (img.src && isUsefulImage(img.src)) images.push(img.src);
+            }
+          }
+        }
+        console.log(`[extract-dna] 🔧 WooCommerce API: +${images.length} images`);
+      }
+    }
+  } catch { /* not woo */ }
+
+  // ── WordPress Media Library (all media, not just products)
+  try {
+    const res = await fetch(`${origin}/wp-json/wp/v2/media?per_page=100&media_type=image&_fields=source_url,media_details`, { signal: AbortSignal.timeout(7000), headers });
+    if (res.ok) {
+      const media = await res.json();
+      if (Array.isArray(media)) {
+        for (const item of media) {
+          if (item.source_url && isUsefulImage(item.source_url)) images.push(item.source_url);
+          // Also grab all available sizes
+          if (item.media_details?.sizes) {
+            for (const size of Object.values(item.media_details.sizes) as any[]) {
+              if (size.source_url && isUsefulImage(size.source_url)) images.push(size.source_url);
+            }
+          }
+        }
+        console.log(`[extract-dna] 📰 WP Media API: +${images.length} total images`);
+      }
+    }
+  } catch { /* not wp */ }
+
+  // ── Magento
+  try {
+    const res = await fetch(`${origin}/rest/V1/products?searchCriteria[pageSize]=100&fields=items[id,media_gallery_entries]`, { signal: AbortSignal.timeout(7000), headers });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.items) {
+        for (const product of data.items.slice(0, 100)) {
+          if (product.media_gallery_entries) {
+            for (const media of product.media_gallery_entries) {
+              const src = media.file ? `${origin}/media/catalog/product${media.file}` : null;
+              if (src && isUsefulImage(src)) images.push(src);
+            }
+          }
+        }
+        console.log(`[extract-dna] 🏗 Magento API: +${images.length} images`);
+      }
+    }
+  } catch { /* not magento */ }
+
+  return images;
 }
+
+// ────────────────────────────────────────────────────────────────
+// EXTERNAL CSS — scrape background-image URLs
+// ────────────────────────────────────────────────────────────────
 
 async function fetchExternalCssImages(page: Page): Promise<string[]> {
   const cssUrls: string[] = await page.evaluate(() =>
     Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
       .map((l) => (l as HTMLLinkElement).href)
       .filter((h) => h.startsWith("http"))
-      .slice(0, 6)
+      .slice(0, 10)
   );
   const images: string[] = [];
   await Promise.allSettled(
     cssUrls.map(async (cssUrl) => {
       try {
-        const resp = await fetch(cssUrl, {
-          signal: AbortSignal.timeout(4000),
-          headers: { "User-Agent": "Mozilla/5.0 (compatible)" },
-        });
+        const resp = await fetch(cssUrl, { signal: AbortSignal.timeout(5000), headers: { "User-Agent": "Mozilla/5.0 (compatible)" } });
         if (!resp.ok) return;
         const text = await resp.text();
         for (const m of text.matchAll(/url\(["']?(https?:\/\/[^"')]+)["']?\)/g)) {
@@ -704,27 +925,49 @@ async function fetchExternalCssImages(page: Page): Promise<string[]> {
   return images;
 }
 
+// ────────────────────────────────────────────────────────────────
+// SITEMAP CRAWL
+// ────────────────────────────────────────────────────────────────
+
 async function fetchSitemapUrls(origin: string): Promise<string[]> {
-  const sitemaps = [`${origin}/sitemap.xml`, `${origin}/sitemap_index.xml`];
-  for (const sitemapUrl of sitemaps) {
+  const headers = { "User-Agent": "Mozilla/5.0 (compatible)" };
+  const allUrls: string[] = [];
+
+  const parseSitemapXml = (text: string): string[] =>
+    [...text.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1].trim());
+
+  const tryFetch = async (url: string): Promise<string | null> => {
     try {
-      const resp = await fetch(sitemapUrl, {
-        signal: AbortSignal.timeout(4000),
-        headers: { "User-Agent": "Mozilla/5.0 (compatible)" },
-      });
-      if (!resp.ok) continue;
-      const text = await resp.text();
-      const locs = [...text.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1].trim());
-      const useful = locs.filter((u) =>
-        /\/(product|collection|gallery|shop|catalog|item|category|portfolio|about|brand)/i.test(u)
-      );
-      if (useful.length > 0) {
-        console.log(`[extract-dna] 🗺 Sitemap: ${useful.length} useful URLs found`);
-        return useful.slice(0, 6);
+      const resp = await fetch(url, { signal: AbortSignal.timeout(5000), headers });
+      return resp.ok ? await resp.text() : null;
+    } catch { return null; }
+  };
+
+  // Try sitemap index first
+  const sitemapPaths = ["/sitemap.xml", "/sitemap_index.xml", "/sitemap-index.xml", "/sitemaps/sitemap.xml"];
+  for (const path of sitemapPaths) {
+    const text = await tryFetch(`${origin}${path}`);
+    if (!text) continue;
+
+    const locs = parseSitemapXml(text);
+    if (locs.some(u => u.endsWith(".xml"))) {
+      // It's a sitemap index — fetch the first sub-sitemaps in parallel
+      const subSitemaps = locs.filter(u => u.endsWith(".xml")).slice(0, 5);
+      const subTexts = await Promise.all(subSitemaps.map(tryFetch));
+      for (const st of subTexts) {
+        if (st) allUrls.push(...parseSitemapXml(st));
       }
-    } catch { /* sitemap not available */ }
+    } else {
+      allUrls.push(...locs);
+    }
+    if (allUrls.length > 0) break;
   }
-  return [];
+
+  const useful = allUrls.filter((u) =>
+    /\/(product|collection|gallery|shop|catalog|item|category|portfolio|about|brand|lifestyle|look)/i.test(u)
+  );
+  if (useful.length > 0) console.log(`[extract-dna] 🗺 Sitemap: ${useful.length} useful URLs`);
+  return useful.slice(0, 10);
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -742,9 +985,6 @@ export async function POST(req: Request) {
     const url = normalizeUrl(rawUrl);
     console.log("[extract-dna] 🚀 Starting deep extraction for:", url);
 
-    // ══════════════════════════════════════════════════════════
-    // PHASE 1 — DEEP PLAYWRIGHT SCRAPE
-    // ══════════════════════════════════════════════════════════
     let textSample = "";
     let extractedColors: string[] = [];
     let extractedFonts: string[] = [];
@@ -755,7 +995,7 @@ export async function POST(req: Request) {
     try {
       browser = await chromium.launch({
         headless: true,
-        args: ["--disable-blink-features=AutomationControlled"],
+        args: ["--disable-blink-features=AutomationControlled", "--no-sandbox"],
       });
 
       const context = await browser.newContext({
@@ -769,14 +1009,15 @@ export async function POST(req: Request) {
         bypassCSP: true,
       });
 
-      // Block heavy resources we don't need (we only want URLs, not file contents)
+      // Block heavy non-image assets
       await context.route("**/*.{mp4,webm,ogg,mp3,wav,flac,woff2,woff,ttf,eot,pdf,zip}", (route) => route.abort());
 
       const page = await context.newPage();
 
-      // ── NETWORK INTERCEPTION — captures all image requests before DOM renders ──
+      // ── NETWORK INTERCEPTION — captures every image request the browser makes
       const networkImages: string[] = [];
       const jsonImagePromises: Promise<void>[] = [];
+
       page.on("response", (response) => {
         try {
           const respUrl = response.url();
@@ -789,10 +1030,7 @@ export async function POST(req: Request) {
           ) {
             networkImages.push(respUrl);
           }
-          if (
-            ct.includes("application/json") &&
-            !respUrl.match(/analytics|tracking|gtm|google|facebook|hotjar|segment/i)
-          ) {
+          if (ct.includes("application/json") && !respUrl.match(/analytics|tracking|gtm|google|facebook|hotjar|segment/i)) {
             const p = response.json()
               .then((json) => extractImagesFromJson(json, networkImages))
               .catch(() => {});
@@ -801,22 +1039,17 @@ export async function POST(req: Request) {
         } catch { /* */ }
       });
 
-      // Navigate to main page — domcontentloaded is fast enough
       console.log("[extract-dna] 📄 Loading main page...");
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 25000 });
+      try { await page.waitForLoadState("networkidle", { timeout: 5000 }); } catch { /* ok */ }
 
-      // Short networkidle wait — enough for JS to render, don't over-wait
-      try { await page.waitForLoadState("networkidle", { timeout: 4000 }); } catch { /* timeout ok */ }
-
-      // Dismiss popups, scroll, then click carousels to expose hidden slides
       await dismissPopups(page);
-      console.log("[extract-dna] 📜 Scrolling...");
+      console.log("[extract-dna] 📜 Scrolling + interacting...");
       await autoScroll(page);
       await clickCarousels(page);
-      await page.waitForTimeout(300);
+      await page.waitForTimeout(500);
 
       const mainData = await scrapePage(page);
-
       extractedColors = mainData.colors;
       extractedFonts = mainData.fonts;
       extractedLogo = mainData.logoUrl;
@@ -826,13 +1059,15 @@ export async function POST(req: Request) {
 
       console.log(`[extract-dna] ✅ Main page: ${extractedImages.length} images, ${extractedColors.length} colors`);
 
-      // ── SUB-PAGE CRAWLER — reused for nav links and sitemap pages ──
+      // ── SUB-PAGE CRAWLER
       const scrapeSubPage = async (link: string) => {
         const subPage = await context.newPage();
         try {
-          await subPage.goto(link, { waitUntil: "domcontentloaded", timeout: 10000 });
-          try { await subPage.waitForLoadState("networkidle", { timeout: 2500 }); } catch { /* ok */ }
+          await subPage.goto(link, { waitUntil: "domcontentloaded", timeout: 15000 });
+          try { await subPage.waitForLoadState("networkidle", { timeout: 3000 }); } catch { /* ok */ }
+          await dismissPopups(subPage);
           await autoScroll(subPage);
+          await clickCarousels(subPage);
           const subData = await scrapePage(subPage);
           console.log(`[extract-dna]   ✅ ${link} — +${subData.images.length} images`);
           return subData;
@@ -844,8 +1079,8 @@ export async function POST(req: Request) {
         }
       };
 
-      // ── CRAWL NAV PAGES + PARSE CSS + FETCH SITEMAP + E-COMMERCE APIs — all in parallel ──
-      const internalLinks = mainData.internalLinks.slice(0, 4);
+      // Crawl up to 8 nav sub-pages + CSS + sitemap + e-commerce APIs all in parallel
+      const internalLinks = mainData.internalLinks.slice(0, 8);
       const origin = new URL(url).origin;
       if (internalLinks.length > 0) {
         console.log(`[extract-dna] 🔗 Crawling ${internalLinks.length} sub-pages in parallel...`);
@@ -871,7 +1106,7 @@ export async function POST(req: Request) {
         }
       }
 
-      // Merge external CSS background images
+      // Merge CSS background images
       for (const img of cssImages) {
         if (!extractedImages.includes(img)) extractedImages.push(img);
       }
@@ -882,10 +1117,10 @@ export async function POST(req: Request) {
         if (!extractedImages.includes(img)) extractedImages.push(img);
       }
 
-      // Crawl top sitemap product/gallery pages not already visited
+      // Crawl sitemap product/gallery pages not yet visited
       if (sitemapUrls.length > 0) {
         const crawledUrls = new Set([url, ...internalLinks]);
-        const sitemapTargets = sitemapUrls.filter((u) => !crawledUrls.has(u)).slice(0, 4);
+        const sitemapTargets = sitemapUrls.filter((u) => !crawledUrls.has(u)).slice(0, 6);
         if (sitemapTargets.length > 0) {
           console.log(`[extract-dna] 🗺 Crawling ${sitemapTargets.length} sitemap pages...`);
           const sitemapCrawlResults = await Promise.allSettled(sitemapTargets.map(scrapeSubPage));
@@ -898,12 +1133,12 @@ export async function POST(req: Request) {
         }
       }
 
-      // Flush pending JSON API promises then merge all network-intercepted images
+      // Flush JSON promises then merge all network-intercepted images
       await Promise.allSettled(jsonImagePromises);
       for (const img of networkImages) {
         if (!extractedImages.includes(img)) extractedImages.push(img);
       }
-      console.log(`[extract-dna] 🌐 Network: +${networkImages.length} images`);
+      console.log(`[extract-dna] 🌐 Network interception: +${networkImages.length} images`);
 
       // Handle manifest logo
       if (extractedLogo.startsWith("__MANIFEST__:")) {
@@ -917,9 +1152,7 @@ export async function POST(req: Request) {
             extractedLogo = new URL(bestIcon.src, manifestUrl).href;
           }
           await manifestPage.close();
-        } catch {
-          extractedLogo = "";
-        }
+        } catch { extractedLogo = ""; }
       }
 
       await browser.close();
@@ -929,25 +1162,18 @@ export async function POST(req: Request) {
       console.warn("[extract-dna] ⚠ Playwright failed, using HTTP fallback...", err);
       if (browser) { try { await browser.close(); } catch { /* */ } browser = null; }
 
-      // ── HTTP FETCH FALLBACK ──
       try {
         const res = await fetch(url, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-            "Accept": "text/html,application/xhtml+xml",
-          },
+          headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", "Accept": "text/html,application/xhtml+xml" },
         });
         const html = await res.text();
 
-        // Title
         const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
         if (titleMatch) pageTitle = titleMatch[1].trim();
 
-        // Meta description
         const metaMatch = html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
         const metaDesc = metaMatch ? metaMatch[1] : "";
 
-        // Text
         const textContent = html
           .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
           .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
@@ -955,27 +1181,48 @@ export async function POST(req: Request) {
           .replace(/\s+/g, " ");
         textSample = (metaDesc + " | " + textContent).slice(0, 5000);
 
-        // Images from HTML
-        const imgRegex = /<img[^>]+(?:src|data-src)=["'](https?:\/\/[^"']+)["']/gi;
-        let match;
-        while ((match = imgRegex.exec(html)) !== null && extractedImages.length < 30) {
-          if (isUsefulImage(match[1])) extractedImages.push(match[1]);
+        // Extract all img src and srcset
+        const imgRegex = /<img[^>]+>/gi;
+        let imgTag;
+        while ((imgTag = imgRegex.exec(html)) !== null && extractedImages.length < 200) {
+          for (const attr of ["src", "data-src", "data-lazy-src", "data-original"]) {
+            const m = imgTag[0].match(new RegExp(`${attr}=["'](https?://[^"']+)["']`, "i"));
+            if (m && isUsefulImage(m[1])) extractedImages.push(m[1]);
+          }
+          const srcsetM = imgTag[0].match(/srcset=["']([^"']+)["']/i);
+          if (srcsetM) {
+            srcsetM[1].split(",").forEach((entry) => {
+              const u = entry.trim().split(/\s+/)[0];
+              if (u.startsWith("http") && isUsefulImage(u)) extractedImages.push(u);
+            });
+          }
         }
 
-        // Background images from CSS
+        // Background images from inline styles
         const bgRegex = /background(?:-image)?:\s*url\(["']?(https?:\/\/[^"')]+)["']?\)/gi;
-        while ((match = bgRegex.exec(html)) !== null && extractedImages.length < 40) {
+        let match;
+        while ((match = bgRegex.exec(html)) !== null && extractedImages.length < 250) {
           if (isUsefulImage(match[1])) extractedImages.push(match[1]);
         }
 
-        // Colors from inline styles
+        // JSON-LD
+        const jldRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+        let jldMatch;
+        while ((jldMatch = jldRegex.exec(html)) !== null) {
+          try {
+            const out: string[] = [];
+            extractImagesFromJson(JSON.parse(jldMatch[1]), out);
+            out.forEach(u => { if (isUsefulImage(u)) extractedImages.push(u); });
+          } catch { /* skip */ }
+        }
+
+        // Colors
         const colorRegex = /#([0-9a-fA-F]{3,8})\b/g;
         while ((match = colorRegex.exec(html)) !== null && extractedColors.length < 15) {
           const hex = "#" + match[1];
           if (hex.length === 4 || hex.length === 7) extractedColors.push(hex);
         }
 
-        // Logo fallback from HTML
         const logoMatch = html.match(/<img[^>]*(?:class|id|alt)=["'][^"']*logo[^"']*["'][^>]*src=["']([^"']+)["']/i)
           || html.match(/<img[^>]*src=["']([^"']*logo[^"']*)["']/i);
         if (logoMatch) extractedLogo = logoMatch[1];
@@ -987,43 +1234,12 @@ export async function POST(req: Request) {
 
     // ── POST-PROCESSING ──
 
-    // Filter images for quality
-    // Quality score: rewards high-res size cues, content-type hints, modern formats;
-    // penalises thumbnails, icons, and explicitly small dimensions.
-    const scoreImage = (u: string): number => {
-      const lower = u.toLowerCase();
-      let score = 0;
-      const dimMatch = u.match(/[_-](\d{3,4})x(\d{3,4})/i);
-      if (dimMatch) {
-        const w = parseInt(dimMatch[1]), h = parseInt(dimMatch[2]);
-        if (w >= 1200 || h >= 1200) score += 30;
-        else if (w >= 800 || h >= 800) score += 20;
-        else if (w >= 400 || h >= 400) score += 5;
-        else score -= 15;
-      }
-      const wMatch = u.match(/[?&](?:w|width)=(\d+)/i);
-      if (wMatch) {
-        const w = parseInt(wMatch[1]);
-        if (w >= 1200) score += 25;
-        else if (w >= 800) score += 15;
-        else if (w >= 400) score += 5;
-        else if (w < 200) score -= 20;
-      }
-      if (/\.(webp|avif)(\?|$)/i.test(u)) score += 4;
-      if (/\/(product|hero|banner|feature|gallery|portfolio|campaign|lifestyle|collection|look|editorial|showcase)/i.test(lower)) score += 18;
-      if (/\/(about|brand|identity|team|story|culture)/i.test(lower)) score += 10;
-      if (/\/(images?|img|media|photos?|assets?|uploads?|static)\//i.test(lower)) score += 5;
-      if (/zoom|retina|highres|fullsize|full[_-]?size|hi[_-]?res|@2x|@3x/i.test(lower)) score += 15;
-      if (/thumbnail|thumb|\bsmall\b|\bmini\b|[_-]sm[_-]|[_-]xs[_-]/i.test(lower)) score -= 25;
-      if (/[_-](50|75|80|100|120|150)x/i.test(u)) score -= 20;
-      if (/icon|sprite|arrow|check|star|dot|close|menu/i.test(lower)) score -= 30;
-      return score;
-    };
-
+    // Filter junk
     extractedImages = extractedImages.filter(isUsefulImage);
 
-    // Sort by quality score before dedup so the best variant of each image wins
+    // Sort best quality first, then deduplicate by normalized URL
     extractedImages.sort((a, b) => scoreImage(b) - scoreImage(a));
+
     const seenNormalized = new Set<string>();
     const deduped: string[] = [];
     for (const img of extractedImages) {
@@ -1033,7 +1249,12 @@ export async function POST(req: Request) {
         deduped.push(img);
       }
     }
-    extractedImages = deduped.slice(0, 150);
+    extractedImages = deduped; // no hard cap — keep all quality images
+
+    // Remove images scoring very poorly (likely icons, tracking, or badges)
+    extractedImages = extractedImages.filter((img) => scoreImage(img) > -20);
+
+    console.log(`[extract-dna] 📊 After filter + dedup: ${extractedImages.length} quality images`);
 
     // Clearbit logo fallback
     if (!extractedLogo || !extractedLogo.startsWith("http")) {
@@ -1044,17 +1265,12 @@ export async function POST(req: Request) {
       } catch { /* */ }
     }
 
-    // Trim text
     textSample = textSample.slice(0, 6000);
 
-    console.log(`[extract-dna] 📊 Final scrape totals: ${extractedImages.length} images, ${extractedColors.length} colors, ${extractedFonts.length} fonts, ${textSample.length} chars text`);
+    console.log(`[extract-dna] 📊 Final totals: ${extractedImages.length} images, ${extractedColors.length} colors, ${extractedFonts.length} fonts`);
 
     // ══════════════════════════════════════════════════════════
-    // PHASE 2 — GEMINI LLM ENRICHMENT
-    // ══════════════════════════════════════════════════════════
-
-    // ══════════════════════════════════════════════════════════
-    // PHASE 2 — GEMINI DNA EXTRACTION (smart model routing)
+    // PHASE 2 — GEMINI DNA EXTRACTION
     // ══════════════════════════════════════════════════════════
 
     const dnaPrompt = `You are an expert Brand Analyst and designer. Analyze this website: ${url}
@@ -1100,13 +1316,7 @@ STRICT REQUIREMENTS:
 
     let parsedDna: any;
     try {
-      // DNA extraction — uses gemini-2.5-flash first (fast + accurate JSON)
-      const dnaResult = await callGemini({
-        taskType: "dna-extraction",
-        prompt: dnaPrompt,
-        mimeType: "application/json",
-        minLength: 50,
-      });
+      const dnaResult = await callGemini({ taskType: "dna-extraction", prompt: dnaPrompt, mimeType: "application/json", minLength: 50 });
       parsedDna = JSON.parse(dnaResult.text);
     } catch (err: any) {
       console.warn("[extract-dna] DNA Gemini call failed, using raw scrape fallback:", err.message);
@@ -1123,13 +1333,12 @@ STRICT REQUIREMENTS:
       };
     }
 
-    // Inject scraped images & preserve logo
     parsedDna.images = [...new Set(extractedImages)];
     if (!parsedDna.logoUrl && extractedLogo) parsedDna.logoUrl = extractedLogo;
-    console.log("[extract-dna] ✅ Brand DNA complete:", parsedDna.brandName);
+    console.log("[extract-dna] ✅ Brand DNA complete:", parsedDna.brandName, `— ${parsedDna.images.length} images`);
 
     // ══════════════════════════════════════════════════════════
-    // PHASE 3 — DOCUMENT GENERATION (smart model routing per doc type)
+    // PHASE 3 — DOCUMENT GENERATION
     // ══════════════════════════════════════════════════════════
 
     const brandContext = `
@@ -1214,14 +1423,10 @@ Recommended posting frequency per platform.
 Rules: Specific to ${parsedDna.brandName}'s industry. Tone of voice: ${parsedDna.toneOfVoice}. Min 500 words.`,
     };
 
-    // Each doc type uses its own optimal model order via smart router
     const [businessProfile, marketResearch, strategy] = await Promise.all([
-      callGemini({ taskType: "business-profile", prompt: docPrompts.businessProfile, minLength: 300 })
-        .then(r => r.text).catch(() => ""),
-      callGemini({ taskType: "market-research", prompt: docPrompts.marketResearch, minLength: 300 })
-        .then(r => r.text).catch(() => ""),
-      callGemini({ taskType: "social-strategy", prompt: docPrompts.strategy, minLength: 300 })
-        .then(r => r.text).catch(() => ""),
+      callGemini({ taskType: "business-profile", prompt: docPrompts.businessProfile, minLength: 300 }).then(r => r.text).catch(() => ""),
+      callGemini({ taskType: "market-research", prompt: docPrompts.marketResearch, minLength: 300 }).then(r => r.text).catch(() => ""),
+      callGemini({ taskType: "social-strategy", prompt: docPrompts.strategy, minLength: 300 }).then(r => r.text).catch(() => ""),
     ]);
 
     console.log(`[extract-dna] 📄 Docs — profile:${businessProfile.length} research:${marketResearch.length} strategy:${strategy.length}`);
