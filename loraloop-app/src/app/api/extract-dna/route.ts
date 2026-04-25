@@ -21,17 +21,80 @@ function isUsefulImage(src: string): boolean {
   // Must be a clean single URL (no unencoded spaces)
   if (src.includes(" ")) return false;
   const lower = src.toLowerCase();
+
+  // ── STRICT EXCLUSION LIST (production-grade filtering) ──
   const junk = [
+    // Tracking pixels and analytics
     "pixel", "track", "analytics", "beacon", "1x1", "spacer",
     "facebook.com/tr", "google-analytics", "doubleclick",
-    "googletagmanager", "hotjar", ".gif", "data:image/gif",
-    "data:image/svg+xml", "gravatar", "wp-emoji",
-    "wpcf7", "spinner", "loading.gif", "placeholder",
+    "googletagmanager", "hotjar", "data:image/gif",
+    // UI elements
+    "gravatar", "wp-emoji", "wpcf7", "spinner", "loading.gif",
+    "placeholder", "avatar", "logo-small", "logo_small",
+    // Social icons
+    "social-icon", "share-icon", "payment-icon", "badge",
+    // Decorative elements
+    "divider", "separator", "line.png", "dot.png", "bullet",
+    "shadow", "gradient.png", "pattern.png", "overlay.png",
   ];
   if (junk.some((j) => lower.includes(j))) return false;
-  if (lower.endsWith(".ico") && !lower.includes("logo")) return false;
-  if (/\/(icon|favicon|sprite|arrow|chevron|check|star|dot|close|menu|hamburger)/i.test(lower)) return false;
+
+  // Reject file types that are typically not brand images
+  if (lower.endsWith(".ico")) return false;
+  if (lower.endsWith(".gif") && !lower.includes("hero") && !lower.includes("banner")) return false;
+  // Reject SVGs unless they're primary logos or hero graphics
+  if (lower.endsWith(".svg") && !lower.includes("logo") && !lower.includes("hero") && !lower.includes("illustration")) return false;
+
+  // Reject common UI icon patterns in URL path
+  if (/\/(icon|favicon|sprite|arrow|chevron|check|star|dot|close|menu|hamburger|caret|toggle|search|email|phone|map-pin|location)/i.test(lower)) return false;
+
+  // Reject images with tiny dimension hints in filename (e.g., 50x50, 32x32)
+  if (/[-_](\d{1,2})x(\d{1,2})\./i.test(lower)) return false;
+
   return true;
+}
+
+// ── IMAGE SCORING — prioritize brand-quality images ──
+interface ScoredImage {
+  url: string;
+  score: number;
+  width: number;
+  height: number;
+}
+
+function scoreImageUrl(url: string, index: number, totalImages: number): number {
+  let score = 0;
+  const lower = url.toLowerCase();
+
+  // Resolution hints from URL (higher = better)
+  const dimMatch = lower.match(/(\d{3,4})x(\d{3,4})/);
+  if (dimMatch) {
+    const w = parseInt(dimMatch[1]);
+    if (w >= 1200) score += 30;
+    else if (w >= 800) score += 20;
+    else if (w >= 400) score += 10;
+  }
+
+  // URL keyword scoring — brand-relevant filenames
+  const highPriority = ["product", "hero", "banner", "main", "cover", "feature", "collection", "campaign", "lifestyle"];
+  const medPriority = ["shop", "gallery", "slider", "showcase", "portfolio", "work", "brand", "about"];
+  if (highPriority.some(k => lower.includes(k))) score += 25;
+  if (medPriority.some(k => lower.includes(k))) score += 15;
+
+  // Position in DOM — earlier images tend to be more important (hero, banner)
+  const positionScore = Math.max(0, 20 - Math.floor((index / Math.max(totalImages, 1)) * 20));
+  score += positionScore;
+
+  // Image format preference (AVIF/WebP = modern, likely higher quality)
+  if (lower.includes(".avif")) score += 5;
+  if (lower.includes(".webp")) score += 3;
+  if (lower.includes(".png") && (lower.includes("product") || lower.includes("logo"))) score += 5;
+
+  // Penalize thumbnails
+  if (lower.includes("thumb") || lower.includes("small") || lower.includes("mini")) score -= 15;
+  if (lower.includes("-150x") || lower.includes("-100x")) score -= 20;
+
+  return score;
 }
 
 // Normalize image URL to detect duplicates from srcset variants
@@ -420,8 +483,15 @@ async function scrapePage(page: Page) {
     const seenPaths = new Set<string>([window.location.pathname]);
     const internalLinks: string[] = [];
     const level2Links: string[] = [];
-    const skipPatterns = ["login", "signin", "signup", "register", "cart", "checkout", "account", "privacy", "terms", "cookie", "legal", "#", "mailto:", "tel:", "javascript:"];
-    const level2Patterns = ["feature", "pricing", "price", "about", "blog", "case-study", "case-studies", "work", "portfolio"];
+    const skipPatterns = ["login", "signin", "signup", "register", "cart", "checkout", "account", "privacy", "terms", "cookie", "legal", "#", "mailto:", "tel:", "javascript:", "password", "reset", "unsubscribe", "sitemap.xml"];
+    const level2Patterns = [
+      "product", "shop", "collection", "service",  // commerce
+      "feature", "pricing", "price", "plan",       // features/pricing
+      "about", "story", "team", "mission",          // about
+      "blog", "article", "news", "resource",        // content
+      "case-study", "case-studies", "testimonial",   // social proof
+      "work", "portfolio", "project", "gallery",     // portfolio
+    ];
 
     for (const a of Array.from(document.querySelectorAll("a[href]"))) {
       try {
@@ -443,8 +513,8 @@ async function scrapePage(page: Page) {
       } catch { /* skip */ }
     }
 
-    // Combine Level 2 links first, then pad with other internal links up to 6
-    const prioritizedLinks = [...level2Links, ...internalLinks].slice(0, 6);
+    // Combine Level 2 links first, then pad with other internal links up to 10-15
+    const prioritizedLinks = [...level2Links, ...internalLinks].slice(0, 12);
 
     return {
       colors: Array.from(colors).filter((c) => c.startsWith("#")).slice(0, 25),
@@ -531,7 +601,7 @@ export async function POST(req: Request) {
 
       // ── CRAWL LEVEL 2 PAGES IN PARALLEL ──
       // Scrape up to 5 priority Level 2 pages (Features, Pricing, About, Blog, etc.)
-      const internalLinks = mainData.internalLinks.slice(0, 5);
+      const internalLinks = mainData.internalLinks.slice(0, 10);
       if (internalLinks.length > 0) {
         console.log(`[extract-dna] 🔗 Crawling ${internalLinks.length} sub-pages in parallel...`);
 
@@ -648,13 +718,12 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── POST-PROCESSING ──
+    // ── POST-PROCESSING — PRODUCTION-GRADE IMAGE PIPELINE ──
 
-    // Filter images for quality
+    // Step 1: Filter images for quality (strict exclusion)
     extractedImages = extractedImages.filter(isUsefulImage);
     
-    // Deduplicate by normalized URL (strips dimension suffixes, CDN params)
-    // Keep the ORIGINAL URL (not the normalized key) for display, but use normalized key for set membership
+    // Step 2: Deduplicate by normalized URL (strips dimension suffixes, CDN params)
     const seenNormalized = new Set<string>();
     const deduped: string[] = [];
     // Sort by URL length descending — longer URLs tend to be higher resolution
@@ -666,7 +735,24 @@ export async function POST(req: Request) {
         deduped.push(img);
       }
     }
-    extractedImages = deduped.slice(0, 50);
+
+    // Step 3: Score and rank images — keep only top 20 brand-quality images
+    const scoredImages: ScoredImage[] = deduped.map((url, idx) => ({
+      url,
+      score: scoreImageUrl(url, idx, deduped.length),
+      width: 0,
+      height: 0,
+    }));
+
+    // Sort by score descending, take top 20
+    scoredImages.sort((a, b) => b.score - a.score);
+    extractedImages = scoredImages.slice(0, 20).map(s => s.url);
+
+    console.log(`[extract-dna] 🖼️ Image scoring: ${deduped.length} candidates → ${extractedImages.length} top-quality images`);
+    // Log top 5 scores for debugging
+    scoredImages.slice(0, 5).forEach((s, i) => {
+      console.log(`[extract-dna]   #${i + 1} score=${s.score} ${s.url.slice(0, 80)}...`);
+    });
 
     // Clearbit logo fallback
     if (!extractedLogo || !extractedLogo.startsWith("http")) {
