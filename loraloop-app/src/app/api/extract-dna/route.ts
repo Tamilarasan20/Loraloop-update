@@ -21,80 +21,17 @@ function isUsefulImage(src: string): boolean {
   // Must be a clean single URL (no unencoded spaces)
   if (src.includes(" ")) return false;
   const lower = src.toLowerCase();
-
-  // ── STRICT EXCLUSION LIST (production-grade filtering) ──
   const junk = [
-    // Tracking pixels and analytics
     "pixel", "track", "analytics", "beacon", "1x1", "spacer",
     "facebook.com/tr", "google-analytics", "doubleclick",
-    "googletagmanager", "hotjar", "data:image/gif",
-    // UI elements
-    "gravatar", "wp-emoji", "wpcf7", "spinner", "loading.gif",
-    "placeholder", "avatar", "logo-small", "logo_small",
-    // Social icons
-    "social-icon", "share-icon", "payment-icon", "badge",
-    // Decorative elements
-    "divider", "separator", "line.png", "dot.png", "bullet",
-    "shadow", "gradient.png", "pattern.png", "overlay.png",
+    "googletagmanager", "hotjar", ".gif", "data:image/gif",
+    "data:image/svg+xml", "gravatar", "wp-emoji",
+    "wpcf7", "spinner", "loading.gif", "placeholder",
   ];
   if (junk.some((j) => lower.includes(j))) return false;
-
-  // Reject file types that are typically not brand images
-  if (lower.endsWith(".ico")) return false;
-  if (lower.endsWith(".gif") && !lower.includes("hero") && !lower.includes("banner")) return false;
-  // Reject SVGs unless they're primary logos or hero graphics
-  if (lower.endsWith(".svg") && !lower.includes("logo") && !lower.includes("hero") && !lower.includes("illustration")) return false;
-
-  // Reject common UI icon patterns in URL path
-  if (/\/(icon|favicon|sprite|arrow|chevron|check|star|dot|close|menu|hamburger|caret|toggle|search|email|phone|map-pin|location)/i.test(lower)) return false;
-
-  // Reject images with tiny dimension hints in filename (e.g., 50x50, 32x32)
-  if (/[-_](\d{1,2})x(\d{1,2})\./i.test(lower)) return false;
-
+  if (lower.endsWith(".ico") && !lower.includes("logo")) return false;
+  if (/\/(icon|favicon|sprite|arrow|chevron|check|star|dot|close|menu|hamburger)/i.test(lower)) return false;
   return true;
-}
-
-// ── IMAGE SCORING — prioritize brand-quality images ──
-interface ScoredImage {
-  url: string;
-  score: number;
-  width: number;
-  height: number;
-}
-
-function scoreImageUrl(url: string, index: number, totalImages: number): number {
-  let score = 0;
-  const lower = url.toLowerCase();
-
-  // Resolution hints from URL (higher = better)
-  const dimMatch = lower.match(/(\d{3,4})x(\d{3,4})/);
-  if (dimMatch) {
-    const w = parseInt(dimMatch[1]);
-    if (w >= 1200) score += 30;
-    else if (w >= 800) score += 20;
-    else if (w >= 400) score += 10;
-  }
-
-  // URL keyword scoring — brand-relevant filenames
-  const highPriority = ["product", "hero", "banner", "main", "cover", "feature", "collection", "campaign", "lifestyle"];
-  const medPriority = ["shop", "gallery", "slider", "showcase", "portfolio", "work", "brand", "about"];
-  if (highPriority.some(k => lower.includes(k))) score += 25;
-  if (medPriority.some(k => lower.includes(k))) score += 15;
-
-  // Position in DOM — earlier images tend to be more important (hero, banner)
-  const positionScore = Math.max(0, 20 - Math.floor((index / Math.max(totalImages, 1)) * 20));
-  score += positionScore;
-
-  // Image format preference (AVIF/WebP = modern, likely higher quality)
-  if (lower.includes(".avif")) score += 5;
-  if (lower.includes(".webp")) score += 3;
-  if (lower.includes(".png") && (lower.includes("product") || lower.includes("logo"))) score += 5;
-
-  // Penalize thumbnails
-  if (lower.includes("thumb") || lower.includes("small") || lower.includes("mini")) score -= 15;
-  if (lower.includes("-150x") || lower.includes("-100x")) score -= 20;
-
-  return score;
 }
 
 // Normalize image URL to detect duplicates from srcset variants
@@ -126,16 +63,16 @@ async function autoScroll(page: Page) {
   await page.evaluate(async () => {
     await new Promise<void>((resolve) => {
       let totalHeight = 0;
-    const distance = 500;
-    const timer = setInterval(() => {
-      window.scrollBy(0, distance);
-      totalHeight += distance;
-      if (totalHeight >= document.body.scrollHeight || totalHeight > 10000) {
-        clearInterval(timer);
-        window.scrollTo(0, 0);
-        resolve();
-      }
-    }, 120);
+      const distance = 800;   // bigger jumps (was 400)
+      const timer = setInterval(() => {
+        window.scrollBy(0, distance);
+        totalHeight += distance;
+        if (totalHeight >= document.body.scrollHeight || totalHeight > 5000) { // cap at 5k (was 8k)
+          clearInterval(timer);
+          window.scrollTo(0, 0);
+          resolve();
+        }
+      }, 80); // faster interval (was 150ms)
     });
   });
 }
@@ -195,25 +132,12 @@ async function scrapePage(page: Page) {
 
     const addImg = (src: string | null | undefined) => {
       if (!src) return;
-      let s = extractCleanUrl(src.trim());
+      let s = extractCleanUrl(src);
       if (s.startsWith("//")) s = "https:" + s;
-      // Resolve relative URLs
-      if (s && !s.startsWith("http") && !s.startsWith("data:")) {
-        try { s = new URL(s, document.baseURI).href; } catch { return; }
-      }
-      if (s && !seenSrcs.has(s) && s.startsWith("http") && !s.includes(" ") && !s.startsWith("data:")) {
+      if (s && !seenSrcs.has(s) && s.startsWith("http") && !s.includes(" ")) {
         seenSrcs.add(s);
         images.push(s);
       }
-    };
-
-    // Extracts all URLs from a srcset string
-    const addSrcset = (srcset: string | null | undefined) => {
-      if (!srcset) return;
-      srcset.split(",").forEach((entry: string) => {
-        const u = entry.trim().split(/\s+/)[0];
-        if (u) addImg(u);
-      });
     };
 
     // ── LOGO — 10-strategy detection ──
@@ -292,208 +216,78 @@ async function scrapePage(page: Page) {
       if (icon) logoUrl = (icon as HTMLLinkElement).href;
     }
 
-    // 7. Manifest
+    // 7. manifest.json icons (just get the href for now)
     if (!logoUrl) {
       const manifest = document.querySelector('link[rel="manifest"]');
-      if (manifest) logoUrl = "__MANIFEST__:" + (manifest as HTMLLinkElement).href;
+      if (manifest) {
+        // We'll handle this on the server side
+        logoUrl = "__MANIFEST__:" + (manifest as HTMLLinkElement).href;
+      }
     }
 
-    // ══════════════════════════════════════════════════════════════════
-    // ULTRA-AGGRESSIVE IMAGE EXTRACTION — 15 STRATEGIES
-    // ══════════════════════════════════════════════════════════════════
+    // ── IMAGES — aggressive multi-source capture ──
 
-    // ── STRATEGY 1: Meta tags (OG, Twitter, schema) ──
-    const metaImgSelectors = [
-      'meta[property="og:image"]', 'meta[property="og:image:url"]',
-      'meta[name="twitter:image"]', 'meta[name="twitter:image:src"]',
-      'meta[itemprop="image"]', 'meta[property="product:image"]',
-    ];
-    for (const sel of metaImgSelectors) {
-      const el = document.querySelector(sel);
-      if (el) addImg((el as HTMLMetaElement).content);
-    }
-
-
-    // ── STRATEGY 2: All <img> tags — 30+ lazy-load attribute variants ──
+    // Strategy 1: All <img> tags with every lazy-load attribute variant
+    // NOTE: data-srcset is intentionally excluded — handled by the srcset block below
     const lazyAttrs = [
-      "src", "data-src", "data-lazy-src", "data-original", "data-lazy",
-      "data-image", "data-bg", "data-full", "data-hi-res", "loading-src",
-      "data-url", "data-img-src", "data-img-url", "data-echo",
-      "data-large", "data-large-file", "data-retina", "data-2x",
-      "data-zoom-image", "data-highres", "data-original-src",
-      "data-fallback-src", "data-noscript-src", "data-default-src",
-      "data-swiper-lazy", "data-flickity-lazyload", "data-lazy-load",
-      "data-pagespeed-lazy-src",
+      "src", "data-src", "data-lazy-src", "data-original", "data-lazy", "data-image",
+      "data-bg", "data-full", "data-hi-res", "loading-src",
+      // Extended: WooCommerce, Magento, custom lazy loaders
+      "data-src-lg", "data-src-large", "data-lazy-load", "data-url",
+      "data-img-src", "data-imgurl", "data-thumb", "data-large-file",
     ];
     for (const img of Array.from(document.querySelectorAll("img"))) {
       for (const attr of lazyAttrs) {
         const val = img.getAttribute(attr);
-        if (val) addImg(val);
+        if (!val) continue;
+        if (val.startsWith("http") || val.startsWith("//")) {
+          addImg(val);
+        } else if (val.startsWith("/")) {
+          try { addImg(new URL(val, document.baseURI).href); } catch { /* skip */ }
+        }
       }
-      addSrcset(img.getAttribute("srcset"));
-      addSrcset(img.getAttribute("data-srcset"));
-      addSrcset(img.getAttribute("data-lazy-srcset"));
+      // srcset + data-srcset — split properly, take LARGEST resolution
+      const srcset = img.getAttribute("srcset") || img.getAttribute("data-srcset");
+      if (srcset) {
+        srcset.split(",").forEach((entry: string) => {
+          const u = entry.trim().split(/\s+/)[0];
+          if (!u) return;
+          try { addImg(new URL(u, document.baseURI).href); } catch { addImg(u); }
+        });
+      }
     }
 
-    // ── STRATEGY 3: <picture> and <video> <source> ──
-    for (const source of Array.from(document.querySelectorAll("picture source, video source"))) {
-      addSrcset(source.getAttribute("srcset"));
-      addImg(source.getAttribute("src"));
+    // Strategy 2: <picture> > <source>
+    for (const source of Array.from(document.querySelectorAll("picture source"))) {
+      const srcset = source.getAttribute("srcset");
+      if (srcset) {
+        srcset.split(",").forEach((entry) => {
+          const url = entry.trim().split(/\s+/)[0];
+          try { addImg(new URL(url, document.baseURI).href); } catch { addImg(url); }
+        });
+      }
     }
 
-    // ── STRATEGY 4: <video> poster ──
+    // Strategy 3: <video> poster images
     for (const video of Array.from(document.querySelectorAll("video[poster]"))) {
       addImg(video.getAttribute("poster"));
     }
 
-    // ── STRATEGY 5: CSS computed background-image on EVERY element ──
-    for (const el of Array.from(document.querySelectorAll("*"))) {
-      try {
-        const cs = window.getComputedStyle(el as Element);
-        const bgImg = cs.backgroundImage;
-        if (bgImg && bgImg !== "none") {
-          const matches = bgImg.matchAll(/url\(["']?(.*?)["']?\)/g);
-          for (const m of matches) {
-            if (m[1] && !m[1].startsWith("data:image/svg") && !m[1].startsWith("data:image/gif")) {
-              addImg(m[1]);
-            }
-          }
-        }
-      } catch { /* skip */ }
-    }
-
-    // ── STRATEGY 6: Inline style background-image ──
-    for (const el of Array.from(document.querySelectorAll("[style]"))) {
-      const style = el.getAttribute("style") || "";
-      if (style.includes("background") || style.includes("url(")) {
-        const matches = style.matchAll(/url\(["']?(.*?)["']?\)/g);
-        for (const m of matches) addImg(m[1]);
-      }
-    }
-
-    // ── STRATEGY 7: <a href> linking directly to image files ──
-    for (const a of Array.from(document.querySelectorAll("a[href]"))) {
-      const href = (a as HTMLAnchorElement).href;
-      if (/\.(jpg|jpeg|png|webp|avif|gif|bmp|svg)([\?#]|$)/i.test(href)) addImg(href);
-    }
-
-    // ── STRATEGY 8: <object> and <embed> data attributes ──
-    for (const el of Array.from(document.querySelectorAll("object[data], embed[src]"))) {
-      const src = el.getAttribute("data") || el.getAttribute("src") || "";
-      if (/\.(jpg|jpeg|png|webp|avif|svg)/i.test(src)) addImg(src);
-    }
-
-    // ── STRATEGY 9: <noscript> fallback images ──
-    for (const ns of Array.from(document.querySelectorAll("noscript"))) {
-      const html = ns.innerHTML;
-      const srcMatch = html.match(/src=['"]([^'"]+)['"]/);
-      if (srcMatch) addImg(srcMatch[1]);
-      const srcsetMatch = html.match(/srcset=['"]([^'"]+)['"]/);
-      if (srcsetMatch) addSrcset(srcsetMatch[1]);
-    }
-
-    // ── STRATEGY 10: JSON-LD structured data (Product, ImageObject, etc.) ──
-    for (const script of Array.from(document.querySelectorAll('script[type="application/ld+json"]'))) {
-      try {
-        const data = JSON.parse(script.textContent || "");
-        const extractFromJson = (obj: any) => {
-          if (!obj || typeof obj !== "object") return;
-          if (Array.isArray(obj)) { obj.forEach(extractFromJson); return; }
-          for (const key of ["image", "url", "contentUrl", "thumbnailUrl", "logo", "photo"]) {
-            if (obj[key]) {
-              if (typeof obj[key] === "string") addImg(obj[key]);
-              else if (Array.isArray(obj[key])) obj[key].forEach((u: any) => typeof u === "string" ? addImg(u) : addImg(u?.url));
-              else if (obj[key]?.url) addImg(obj[key].url);
-            }
-          }
-          Object.values(obj).forEach(extractFromJson);
-        };
-        extractFromJson(data);
-      } catch { /* skip malformed JSON-LD */ }
-    }
-
-    // ── STRATEGY 11: Next.js __NEXT_DATA__ injection ──
-    const nextDataEl = document.getElementById("__NEXT_DATA__");
-    if (nextDataEl) {
-      try {
-        const nextData = JSON.parse(nextDataEl.textContent || "");
-        const extractImagesFromObject = (obj: any, depth = 0) => {
-          if (depth > 6 || !obj) return;
-          if (typeof obj === "string" && /^https?:\/\/.+\.(jpg|jpeg|png|webp|avif)/i.test(obj)) { addImg(obj); }
-          else if (Array.isArray(obj)) { obj.forEach(item => extractImagesFromObject(item, depth + 1)); }
-          else if (typeof obj === "object") { for (const val of Object.values(obj)) extractImagesFromObject(val, depth + 1); }
-        };
-        extractImagesFromObject(nextData);
-      } catch { /* skip */ }
-    }
-
-    // ── STRATEGY 12: Shopify / inline script image URLs ──
-    for (const script of Array.from(document.querySelectorAll("script:not([src])"))) {
-      const text = script.textContent || "";
-      if (text.includes("cdn.shopify.com") || text.includes("featured_image")) {
-        const urls = text.match(/https?:\/\/cdn\.shopify\.com\/[^\s"'\\]+\.(jpg|jpeg|png|webp)/gi) || [];
-        urls.forEach(addImg);
-      }
-      if (text.includes("product") || text.includes("gallery") || text.includes("carousel") || text.includes("images")) {
-        const matches = text.match(/["'](https?:\/\/[^"']+\.(jpg|jpeg|png|webp|avif))["']/gi) || [];
-        matches.slice(0, 40).forEach(m => addImg(m.replace(/["']/g, "")));
-      }
-    }
-
-    // ── STRATEGY 13: data-* attributes containing image URLs ──
-    const imgDataSelectors = [
-      "[data-background]", "[data-bg]", "[data-image]", "[data-img]",
-      "[data-thumb]", "[data-cover]", "[data-hero]", "[data-poster]",
-      "[data-slide-bg]", "[data-carousel-src]", "[data-lazy-background]",
-      "[data-fancybox]", "[data-swiper-slide-image]",
-    ];
-    for (const sel of imgDataSelectors) {
-      for (const el of Array.from(document.querySelectorAll(sel))) {
-        for (const attr of Array.from((el as Element).attributes)) {
-          if (attr.name.startsWith("data-") && attr.value.startsWith("http") && /\.(jpg|jpeg|png|webp|avif)/i.test(attr.value)) {
-            addImg(attr.value);
-          }
-        }
-      }
-    }
-
-    // ── STRATEGY 14: Scan ALL element attributes for image URLs ──
-    for (const el of Array.from(document.querySelectorAll("*")).slice(0, 3000)) {
-      for (const attr of Array.from((el as Element).attributes)) {
-        const v = attr.value;
-        if (v && v.length > 10 && v.length < 500 && v.startsWith("http") && /\.(jpg|jpeg|png|webp|avif)([\?&]|$)/i.test(v)) {
-          addImg(v);
-        }
-      }
-    }
-
-    // ── STRATEGY 15: CSS custom property image values ──
-    const cssVarPrefixes = ["--bg-image", "--hero-image", "--background-image", "--image-url", "--img-src", "--slide-bg", "--cover"];
-    for (const el of Array.from(document.querySelectorAll("[style]")).slice(0, 300)) {
-      try {
-        const styles = window.getComputedStyle(el as Element);
-        for (const varName of cssVarPrefixes) {
-          const val = styles.getPropertyValue(varName).trim();
-          if (val && val.includes("url(")) {
-            const m = val.match(/url\(["']?(.*?)["']?\)/);
-            if (m) addImg(m[1]);
-          }
-        }
-      } catch { /* skip */ }
-    }
-
-    // ── COLORS & FONTS ──
+    // Strategy 4: CSS background-image on up to 300 elements
     const allEls = [
       document.body,
       ...Array.from(document.querySelectorAll(
         "header,footer,nav,main,section,article,aside,div,span,a,button,figure,h1,h2,h3,h4,h5,h6,p,[class*='hero'],[class*='banner'],[class*='slide'],[class*='bg'],[class*='image'],[class*='thumb'],[class*='card'],[class*='cover'],[class*='feature'],[style*='background']"
       )),
-    ];
+    ].slice(0, 600);
+
     const colors = new Set<string>();
     const fonts = new Set<string>();
+
     for (const el of allEls) {
       try {
         const cs = window.getComputedStyle(el);
+        // Colors
         const bg = cs.backgroundColor;
         if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") colors.add(rgb2hex(bg));
         const clr = cs.color;
@@ -502,123 +296,265 @@ async function scrapePage(page: Page) {
         if (border && border !== "rgba(0, 0, 0, 0)" && border !== "transparent" && border !== "rgb(0, 0, 0)") {
           colors.add(rgb2hex(border));
         }
+
+        // Fonts
         if (cs.fontFamily) {
           const primary = cs.fontFamily.split(",")[0].replace(/['"]/g, "").trim();
           if (primary && primary !== "inherit" && primary !== "initial") fonts.add(primary);
         }
-      } catch { /* skip */ }
-    }
 
-    // ── TEXT — structured extraction ──
-    // Remove noise before extraction
-    const noiseSelectors = [
-      "nav", "header", "footer", "script", "style", "noscript", "iframe",
-      "svg", "form", "button", ".menu", ".nav", ".footer", ".cookie-banner",
-      "[role='navigation']", "[role='banner']", "[role='contentinfo']",
-      "#cookie-banner", ".modal", ".popup", "[aria-hidden='true']", "aside"
-    ];
-    noiseSelectors.forEach(sel => {
-      document.querySelectorAll(sel).forEach(el => el.remove());
-    });
-
-    // Extract structured text (Headings + Paragraphs)
-    const textParts: string[] = [];
-    
-    const pageTitle = document.title;
-    if (pageTitle) textParts.push(`# ${pageTitle}\n`);
-
-    const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute("content") || "";
-    if (metaDesc) textParts.push(`Description: ${metaDesc}\n`);
-    
-    // Walk the DOM for semantic content
-    const walkDOM = (node: Node) => {
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        const el = node as HTMLElement;
-        const tag = el.tagName.toLowerCase();
-        
-        // Skip hidden elements
-        const style = window.getComputedStyle(el);
-        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return;
-
-        if (tag === 'h1' || tag === 'h2' || tag === 'h3' || tag === 'h4') {
-          const text = el.textContent?.trim().replace(/\s+/g, ' ');
-          if (text && text.length > 3) textParts.push(`\n${'#'.repeat(parseInt(tag[1]))} ${text}`);
-        } else if (tag === 'p') {
-          // Only direct text content for paragraphs to avoid duplicating child text
-          const text = el.textContent?.trim().replace(/\s+/g, ' ');
-          if (text && text.length > 20) textParts.push(text);
-        } else if (tag === 'li') {
-          const text = el.textContent?.trim().replace(/\s+/g, ' ');
-          if (text && text.length > 10) textParts.push(`- ${text}`);
-        } else {
-          // Recurse into children if it's a container
-          node.childNodes.forEach(child => walkDOM(child));
-        }
-      }
-    };
-
-    walkDOM(document.body);
-    
-    // Deduplicate and clean
-    const cleanTextParts = textParts.filter((item, index, arr) => {
-      if (!item) return false;
-      if (index === 0) return true;
-      return item !== arr[index - 1]; // basic consecutive deduplication
-    });
-
-    const textSample = cleanTextParts.join("\n").slice(0, 15000);
-
-    // ── INTERNAL LINKS — prioritize Level 2 pages ──
-    const baseHostname = window.location.hostname;
-    const seenPaths = new Set<string>([window.location.pathname]);
-    const internalLinks: string[] = [];
-    const level2Links: string[] = [];
-    const skipPatterns = [
-      "login", "signin", "signup", "register", "cart", "checkout",
-      "account", "privacy", "terms", "cookie", "legal", "#", "mailto:",
-      "tel:", "javascript:", "password", "reset", "unsubscribe",
-      "sitemap.xml", "wp-admin", "wp-login", "feed", ".rss", ".atom",
-    ];
-    const level2Patterns = [
-      "product", "shop", "collection", "service", "catalogue", "catalog", "menu",
-      "feature", "pricing", "price", "plan", "subscription",
-      "about", "story", "team", "mission", "values", "sustainability",
-      "blog", "article", "news", "resource", "guide", "learn", "press",
-      "case-study", "case-studies", "testimonial", "review", "customer",
-      "work", "portfolio", "project", "gallery", "look-book", "lookbook",
-      "brand", "media", "assets",
-    ];
-
-    for (const a of Array.from(document.querySelectorAll("a[href]"))) {
-      try {
-        const href = new URL((a as HTMLAnchorElement).href, document.baseURI);
-        const path = href.pathname.toLowerCase();
-        if (href.hostname === baseHostname && !seenPaths.has(href.pathname) && path !== "/") {
-          if (!skipPatterns.some((s) => path.includes(s) || href.href.includes(s))) {
-            seenPaths.add(href.pathname);
-            if (level2Patterns.some(p => path.includes(p))) {
-              level2Links.push(href.href);
-            } else {
-              internalLinks.push(href.href);
+        // Background images
+        const bgImg = cs.backgroundImage;
+        if (bgImg && bgImg !== "none") {
+          const matches = bgImg.matchAll(/url\(["']?(.*?)["']?\)/g);
+          for (const m of matches) {
+            if (m[1] && !m[1].startsWith("data:image/svg") && !m[1].startsWith("data:image/gif")) {
+              try { addImg(new URL(m[1], document.baseURI).href); } catch { addImg(m[1]); }
             }
           }
         }
       } catch { /* skip */ }
     }
 
-    // Level 2 first, then all other internal links — up to 15 pages
-    const prioritizedLinks = [...level2Links, ...internalLinks].slice(0, 15);
+    // Strategy 5: Inline style background-image attributes
+    for (const el of Array.from(document.querySelectorAll("[style*='background']"))) {
+      const style = el.getAttribute("style") || "";
+      const matches = style.matchAll(/url\(["']?(.*?)["']?\)/g);
+      for (const m of matches) {
+        try { addImg(new URL(m[1], document.baseURI).href); } catch { addImg(m[1]); }
+      }
+    }
+
+    // Strategy 6: <figure>, <a> with image extensions in href
+    for (const a of Array.from(document.querySelectorAll("a[href]"))) {
+      const href = (a as HTMLAnchorElement).href;
+      if (/\.(jpg|jpeg|png|webp|avif)(\?|$)/i.test(href)) addImg(href);
+    }
+
+    // Strategy 7: <noscript> fallback images — lazy-load implementations always put
+    // the real full-res src inside <noscript> so non-JS scrapers can find it
+    for (const ns of Array.from(document.querySelectorAll("noscript"))) {
+      const raw = ns.textContent || "";
+      for (const m of raw.matchAll(/src=["']([^"']+)["']/g)) {
+        try { addImg(new URL(m[1], document.baseURI).href); } catch { addImg(m[1]); }
+      }
+    }
+
+    // Strategy 8: JSON-LD structured data — schema.org Product / ImageObject
+    for (const script of Array.from(document.querySelectorAll('script[type="application/ld+json"]'))) {
+      try {
+        const walk = (obj: Record<string, unknown>): void => {
+          if (!obj || typeof obj !== "object") return;
+          if (Array.isArray(obj)) { (obj as unknown[]).forEach(i => walk(i as Record<string, unknown>)); return; }
+          for (const [k, v] of Object.entries(obj)) {
+            if (["image", "url", "contentUrl", "thumbnailUrl"].includes(k) && typeof v === "string"
+              && /^https?:\/\//.test(v) && /\.(jpg|jpeg|png|webp|avif)/i.test(v)) {
+              addImg(v);
+            } else if (v && typeof v === "object") walk(v as Record<string, unknown>);
+          }
+        };
+        walk(JSON.parse(script.textContent || ""));
+      } catch { /* skip */ }
+    }
+
+    // Strategy 9: Product zoom / high-res data attributes (WooCommerce, Shopify, Magento zoom plugins)
+    const zoomAttrs = [
+      "data-zoom-image", "data-large", "data-full-src", "data-retina-src",
+      "data-echo", "data-highres", "data-big", "data-photo",
+      "data-original-src", "data-full-size-url", "data-zoom-src",
+    ];
+    const zoomSelector = zoomAttrs.map(a => `[${a}]`).join(",");
+    for (const el of Array.from(document.querySelectorAll(zoomSelector))) {
+      for (const attr of zoomAttrs) {
+        const val = el.getAttribute(attr);
+        if (val) { try { addImg(new URL(val, document.baseURI).href); } catch { addImg(val); } }
+      }
+    }
+
+    // ── TEXT — structured extraction ──
+    const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute("content") || "";
+    const ogDesc = document.querySelector('meta[property="og:description"]')?.getAttribute("content") || "";
+    const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute("content") || "";
+
+    // Gather text from semantic elements, ordered by importance
+    const textParts: string[] = [];
+    if (ogTitle) textParts.push(ogTitle);
+    if (metaDesc) textParts.push(metaDesc);
+    if (ogDesc && ogDesc !== metaDesc) textParts.push(ogDesc);
+
+    const contentSelectors = [
+      "h1", "h2", "h3", "h4",
+      "[class*='hero'] p", "[class*='hero'] h1", "[class*='hero'] h2",
+      "[class*='tagline']", "[class*='slogan']", "[class*='headline']",
+      "[class*='subtitle']", "[class*='description']",
+      "main p", "article p", "section p",
+      "p", "li", "blockquote", "figcaption",
+      "[class*='feature'] h3", "[class*='feature'] p",
+      "[class*='about'] p", "[class*='mission'] p",
+      "footer p",
+    ];
+    for (const sel of contentSelectors) {
+      for (const el of Array.from(document.querySelectorAll(sel))) {
+        const t = el.textContent?.trim();
+        if (t && t.length > 5 && !textParts.includes(t)) textParts.push(t);
+      }
+    }
+
+    // JSON-LD structured data
+    const jsonLd = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const script of Array.from(jsonLd)) {
+      try {
+        const data = JSON.parse(script.textContent || "");
+        if (data.description) textParts.push(data.description);
+        if (data.name) textParts.push(data.name);
+        if (data.slogan) textParts.push(data.slogan);
+      } catch { /* skip */ }
+    }
+
+    const textSample = textParts.join(" | ").slice(0, 5000);
+
+    // ── INTERNAL LINKS — crawl ALL level-1 navigation links ──
+    const baseHostname = window.location.hostname;
+    const seenPaths = new Set<string>([window.location.pathname]);
+    const internalLinks: string[] = [];
+    const skipPatterns = ["login", "signin", "signup", "register", "cart", "checkout", "account", "privacy", "terms", "cookie", "legal", "#", "mailto:", "tel:", "javascript:"];
+
+    // Strategy 1: ALL links inside nav/header (primary navigation)
+    const navAreas = document.querySelectorAll("nav, header, [role='navigation'], [class*='nav'], [class*='menu']");
+    for (const area of Array.from(navAreas)) {
+      for (const a of Array.from(area.querySelectorAll("a[href]"))) {
+        try {
+          const href = new URL((a as HTMLAnchorElement).href, document.baseURI);
+          const path = href.pathname.toLowerCase();
+          if (href.hostname === baseHostname && !seenPaths.has(href.pathname) && path !== "/") {
+            if (!skipPatterns.some((s) => path.includes(s) || href.href.includes(s))) {
+              seenPaths.add(href.pathname);
+              internalLinks.push(href.href);
+            }
+          }
+        } catch { /* skip */ }
+      }
+    }
+
+    // Strategy 2: Any remaining same-domain links with useful paths (backup)
+    if (internalLinks.length < 6) {
+      for (const a of Array.from(document.querySelectorAll("a[href]"))) {
+        if (internalLinks.length >= 8) break;
+        try {
+          const href = new URL((a as HTMLAnchorElement).href, document.baseURI);
+          const path = href.pathname.toLowerCase();
+          if (href.hostname === baseHostname && !seenPaths.has(href.pathname) && path !== "/" && path.split("/").length <= 3) {
+            if (!skipPatterns.some((s) => path.includes(s) || href.href.includes(s))) {
+              seenPaths.add(href.pathname);
+              internalLinks.push(href.href);
+            }
+          }
+        } catch { /* skip */ }
+      }
+    }
 
     return {
       colors: Array.from(colors).filter((c) => c.startsWith("#")).slice(0, 25),
       fonts: Array.from(fonts).slice(0, 8),
       logoUrl,
-      images: images.slice(0, 200),
+      images: images.slice(0, 150),
       textSample,
       pageTitle: document.title,
-      internalLinks: prioritizedLinks,
+      internalLinks: internalLinks.slice(0, 8),
     };
   });
+}
+
+// ────────────────────────────────────────────────────────────────
+// IMAGE ENHANCEMENT — NETWORK, CAROUSEL, CSS, SITEMAP
+// ────────────────────────────────────────────────────────────────
+
+function extractImagesFromJson(obj: unknown, results: string[]): void {
+  if (!obj || typeof obj !== "object") return;
+  if (Array.isArray(obj)) {
+    for (const item of obj) extractImagesFromJson(item, results);
+    return;
+  }
+  for (const value of Object.values(obj as Record<string, unknown>)) {
+    if (typeof value === "string" && /https?:\/\/.+\.(jpg|jpeg|png|webp|avif)/i.test(value)) {
+      if (isUsefulImage(value)) results.push(value);
+    } else if (value && typeof value === "object") {
+      extractImagesFromJson(value, results);
+    }
+  }
+}
+
+async function clickCarousels(page: Page): Promise<void> {
+  const nextSelectors = [
+    '[class*="slick-next"]', '[class*="swiper-next"]', '[class*="carousel-next"]',
+    '[class*="arrow-next"]', '[class*="arrow-right"]', '[data-slide="next"]',
+    '[aria-label="Next"]', '[aria-label="Next slide"]', '[aria-label="next"]',
+    'button[class*="next"]', '[class*="owl-next"]', '[class*="flickity-next"]',
+  ];
+  for (const sel of nextSelectors) {
+    try {
+      const btns = page.locator(sel);
+      const count = await btns.count();
+      for (let b = 0; b < Math.min(count, 3); b++) {
+        const btn = btns.nth(b);
+        if (await btn.isVisible({ timeout: 200 })) {
+          for (let i = 0; i < 4; i++) {
+            await btn.click({ timeout: 300 });
+            await page.waitForTimeout(200);
+          }
+        }
+      }
+    } catch { /* carousel not present */ }
+  }
+}
+
+async function fetchExternalCssImages(page: Page): Promise<string[]> {
+  const cssUrls: string[] = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+      .map((l) => (l as HTMLLinkElement).href)
+      .filter((h) => h.startsWith("http"))
+      .slice(0, 6)
+  );
+  const images: string[] = [];
+  await Promise.allSettled(
+    cssUrls.map(async (cssUrl) => {
+      try {
+        const resp = await fetch(cssUrl, {
+          signal: AbortSignal.timeout(4000),
+          headers: { "User-Agent": "Mozilla/5.0 (compatible)" },
+        });
+        if (!resp.ok) return;
+        const text = await resp.text();
+        for (const m of text.matchAll(/url\(["']?(https?:\/\/[^"')]+)["']?\)/g)) {
+          if (isUsefulImage(m[1])) images.push(m[1]);
+        }
+      } catch { /* CSS fetch failed */ }
+    })
+  );
+  return images;
+}
+
+async function fetchSitemapUrls(origin: string): Promise<string[]> {
+  const sitemaps = [`${origin}/sitemap.xml`, `${origin}/sitemap_index.xml`];
+  for (const sitemapUrl of sitemaps) {
+    try {
+      const resp = await fetch(sitemapUrl, {
+        signal: AbortSignal.timeout(4000),
+        headers: { "User-Agent": "Mozilla/5.0 (compatible)" },
+      });
+      if (!resp.ok) continue;
+      const text = await resp.text();
+      const locs = [...text.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1].trim());
+      const useful = locs.filter((u) =>
+        /\/(product|collection|gallery|shop|catalog|item|category|portfolio|about|brand)/i.test(u)
+      );
+      if (useful.length > 0) {
+        console.log(`[extract-dna] 🗺 Sitemap: ${useful.length} useful URLs found`);
+        return useful.slice(0, 6);
+      }
+    } catch { /* sitemap not available */ }
+  }
+  return [];
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -637,7 +573,7 @@ export async function POST(req: Request) {
     console.log("[extract-dna] 🚀 Starting deep extraction for:", url);
 
     // ══════════════════════════════════════════════════════════
-    // PHASE 1 — DEEP PLAYWRIGHT SCRAPE + 5 ADVANCED STRATEGIES
+    // PHASE 1 — DEEP PLAYWRIGHT SCRAPE
     // ══════════════════════════════════════════════════════════
     let textSample = "";
     let extractedColors: string[] = [];
@@ -645,17 +581,6 @@ export async function POST(req: Request) {
     let extractedLogo = "";
     let extractedImages: string[] = [];
     let pageTitle = "";
-
-    // Track images found per strategy for logging
-    const strategyStats = {
-      network: 0,
-      dom: 0,
-      sitemap: 0,
-      carousel: 0,
-      css: 0,
-      xhr: 0,
-      subPages: 0,
-    };
 
     try {
       browser = await chromium.launch({
@@ -674,156 +599,52 @@ export async function POST(req: Request) {
         bypassCSP: true,
       });
 
-      // Block heavy resources we don't need
+      // Block heavy resources we don't need (we only want URLs, not file contents)
       await context.route("**/*.{mp4,webm,ogg,mp3,wav,flac,woff2,woff,ttf,eot,pdf,zip}", (route) => route.abort());
 
       const page = await context.newPage();
 
-      // ════════════════════════════════════════════
-      // STRATEGY A: NETWORK INTERCEPTION (captures ALL image requests)
-      // ════════════════════════════════════════════
-      const networkImages = new Set<string>();
-      const xhrImages = new Set<string>();
-
-      page.on("response", async (response) => {
+      // ── NETWORK INTERCEPTION — captures all image requests before DOM renders ──
+      const networkImages: string[] = [];
+      const jsonImagePromises: Promise<void>[] = [];
+      page.on("response", (response) => {
         try {
-          const resUrl = response.url();
-          const contentType = response.headers()["content-type"] || "";
-          const status = response.status();
-
-          // Strategy A1: Direct image responses
-          if (status === 200 && contentType.startsWith("image/")) {
-            if (isUsefulImage(resUrl) && !networkImages.has(resUrl)) {
-              networkImages.add(resUrl);
-            }
+          const respUrl = response.url();
+          const ct = response.headers()["content-type"] || "";
+          if (
+            (ct.startsWith("image/jpeg") || ct.startsWith("image/png") ||
+              ct.startsWith("image/webp") || ct.startsWith("image/avif") ||
+              /\.(jpg|jpeg|png|webp|avif)(\?|#|$)/i.test(respUrl)) &&
+            isUsefulImage(respUrl)
+          ) {
+            networkImages.push(respUrl);
           }
-
-          // Strategy A2: XHR/Fetch API interception — JSON responses containing image URLs
-          if (status === 200 && (contentType.includes("application/json") || contentType.includes("text/json"))) {
-            try {
-              const body = await response.text();
-              // Extract image URLs from JSON strings
-              const imgMatches = body.match(/(https?:\/\/[^"'\s\\]+\.(?:jpg|jpeg|png|webp|avif))/gi) || [];
-              for (const imgUrl of imgMatches) {
-                const clean = imgUrl.replace(/\\/g, "");
-                if (isUsefulImage(clean) && !xhrImages.has(clean)) {
-                  xhrImages.add(clean);
-                }
-              }
-            } catch { /* not parseable — skip */ }
+          if (
+            ct.includes("application/json") &&
+            !respUrl.match(/analytics|tracking|gtm|google|facebook|hotjar|segment/i)
+          ) {
+            const p = response.json()
+              .then((json) => extractImagesFromJson(json, networkImages))
+              .catch(() => {});
+            jsonImagePromises.push(p);
           }
-        } catch { /* skip response errors */ }
+        } catch { /* */ }
       });
 
-      // Navigate to main page
+      // Navigate to main page — domcontentloaded is fast enough
       console.log("[extract-dna] 📄 Loading main page...");
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
 
-      // Short networkidle wait
-      try { await page.waitForLoadState("networkidle", { timeout: 5000 }); } catch { /* timeout ok */ }
+      // Short networkidle wait — enough for JS to render, don't over-wait
+      try { await page.waitForLoadState("networkidle", { timeout: 4000 }); } catch { /* timeout ok */ }
 
-      // Dismiss popups then scroll
+      // Dismiss popups, scroll, then click carousels to expose hidden slides
       await dismissPopups(page);
       console.log("[extract-dna] 📜 Scrolling...");
       await autoScroll(page);
-      await page.waitForTimeout(500);
+      await clickCarousels(page);
+      await page.waitForTimeout(300);
 
-      // ════════════════════════════════════════════
-      // STRATEGY B: CAROUSEL/SLIDER CLICK AUTOMATION
-      // ════════════════════════════════════════════
-      console.log("[extract-dna] 🎠 Clicking carousels/sliders...");
-      const carouselBefore = networkImages.size;
-      try {
-        const carouselSelectors = [
-          // Next/arrow buttons
-          '[class*="next"]', '[class*="arrow-right"]', '[class*="slick-next"]',
-          '[class*="swiper-button-next"]', '[data-slide="next"]',
-          '[aria-label="Next"]', '[aria-label="next"]', '[aria-label="Next slide"]',
-          'button[class*="carousel"] + button', '.flickity-prev-next-button.next',
-          '[class*="glide__arrow--right"]', '[class*="owl-next"]',
-          // Dots/pagination
-          '[class*="slick-dots"] li:nth-child(2)', '[class*="swiper-pagination-bullet"]:nth-child(2)',
-          '[class*="carousel-indicators"] li:nth-child(2)',
-        ];
-
-        for (const sel of carouselSelectors) {
-          try {
-            const btn = page.locator(sel).first();
-            if (await btn.isVisible({ timeout: 200 })) {
-              // Click through up to 8 slides
-              for (let i = 0; i < 8; i++) {
-                try {
-                  await btn.click({ timeout: 500 });
-                  await page.waitForTimeout(400);
-                } catch { break; }
-              }
-            }
-          } catch { /* selector not found — expected */ }
-        }
-
-        // Also try Tab-based interaction on product galleries
-        try {
-          const thumbs = page.locator('[class*="thumbnail"], [class*="thumb"], [class*="product-image"], [class*="gallery-item"]');
-          const thumbCount = await thumbs.count();
-          for (let i = 0; i < Math.min(thumbCount, 10); i++) {
-            try {
-              await thumbs.nth(i).click({ timeout: 300 });
-              await page.waitForTimeout(300);
-            } catch { break; }
-          }
-        } catch { /* no thumbnails */ }
-      } catch (err) {
-        console.warn("[extract-dna] ⚠ Carousel automation error:", err);
-      }
-      strategyStats.carousel = networkImages.size - carouselBefore;
-      console.log(`[extract-dna] 🎠 Carousel clicks revealed ${strategyStats.carousel} new images`);
-
-      // Wait for any lazy images triggered by carousel
-      await page.waitForTimeout(500);
-
-      // ════════════════════════════════════════════
-      // STRATEGY C: EXTERNAL CSS STYLESHEET PARSING
-      // ════════════════════════════════════════════
-      console.log("[extract-dna] 🎨 Parsing external CSS stylesheets...");
-      const cssImages = new Set<string>();
-      try {
-        // Get all stylesheet URLs
-        const stylesheetUrls = await page.evaluate(() => {
-          const links: string[] = [];
-          document.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
-            const href = (link as HTMLLinkElement).href;
-            if (href && href.startsWith("http")) links.push(href);
-          });
-          return links;
-        });
-
-        // Fetch and parse each CSS file for background-image URLs
-        const cssPromises = stylesheetUrls.slice(0, 10).map(async (cssUrl) => {
-          try {
-            const cssPage = await context.newPage();
-            const resp = await cssPage.goto(cssUrl, { timeout: 5000 });
-            const cssText = await resp?.text() || "";
-            await cssPage.close();
-
-            // Extract all url() from CSS
-            const urlMatches = cssText.matchAll(/url\(["']?((?:https?:\/\/|\/)[^"')]+\.(jpg|jpeg|png|webp|avif))["']?\)/gi);
-            for (const m of urlMatches) {
-              let imgUrl = m[1];
-              if (imgUrl.startsWith("/")) {
-                try { imgUrl = new URL(imgUrl, url).href; } catch { continue; }
-              }
-              if (isUsefulImage(imgUrl)) cssImages.add(imgUrl);
-            }
-          } catch { /* skip failed CSS */ }
-        });
-        await Promise.allSettled(cssPromises);
-      } catch (err) {
-        console.warn("[extract-dna] ⚠ CSS parsing error:", err);
-      }
-      strategyStats.css = cssImages.size;
-      console.log(`[extract-dna] 🎨 CSS stylesheets: ${cssImages.size} images found`);
-
-      // ── DOM SCRAPE (existing 15-strategy function) ──
       const mainData = await scrapePage(page);
 
       extractedColors = mainData.colors;
@@ -832,168 +653,81 @@ export async function POST(req: Request) {
       extractedImages = [...mainData.images];
       textSample = mainData.textSample;
       pageTitle = mainData.pageTitle;
-      strategyStats.dom = mainData.images.length;
 
-      console.log(`[extract-dna] ✅ Main page DOM: ${extractedImages.length} images, ${extractedColors.length} colors`);
+      console.log(`[extract-dna] ✅ Main page: ${extractedImages.length} images, ${extractedColors.length} colors`);
 
-      // Merge network-intercepted images
-      for (const img of networkImages) {
-        if (!extractedImages.includes(img)) extractedImages.push(img);
+      // ── SUB-PAGE CRAWLER — reused for nav links and sitemap pages ──
+      const scrapeSubPage = async (link: string) => {
+        const subPage = await context.newPage();
+        try {
+          await subPage.goto(link, { waitUntil: "domcontentloaded", timeout: 10000 });
+          try { await subPage.waitForLoadState("networkidle", { timeout: 2500 }); } catch { /* ok */ }
+          await autoScroll(subPage);
+          const subData = await scrapePage(subPage);
+          console.log(`[extract-dna]   ✅ ${link} — +${subData.images.length} images`);
+          return subData;
+        } catch (err) {
+          console.warn(`[extract-dna]   ⚠ Failed: ${link}`, err);
+          return null;
+        } finally {
+          await subPage.close();
+        }
+      };
+
+      // ── CRAWL NAV PAGES + PARSE CSS + FETCH SITEMAP — all in parallel ──
+      const internalLinks = mainData.internalLinks.slice(0, 4);
+      const origin = new URL(url).origin;
+      if (internalLinks.length > 0) {
+        console.log(`[extract-dna] 🔗 Crawling ${internalLinks.length} sub-pages in parallel...`);
       }
-      strategyStats.network = networkImages.size;
-      console.log(`[extract-dna] 🌐 Network interception: ${networkImages.size} images captured`);
 
-      // Merge XHR/API images
-      for (const img of xhrImages) {
-        if (!extractedImages.includes(img)) extractedImages.push(img);
+      const [subResults, cssImages, sitemapUrls] = await Promise.all([
+        Promise.allSettled(internalLinks.map(scrapeSubPage)),
+        fetchExternalCssImages(page).catch(() => [] as string[]),
+        fetchSitemapUrls(origin).catch(() => [] as string[]),
+      ]);
+
+      // Merge sub-page results
+      for (const result of subResults) {
+        if (result.status !== "fulfilled" || !result.value) continue;
+        const subData = result.value;
+        for (const img of subData.images) {
+          if (!extractedImages.includes(img)) extractedImages.push(img);
+        }
+        if (subData.textSample) textSample += " | " + subData.textSample;
+        for (const c of subData.colors) {
+          if (!extractedColors.includes(c)) extractedColors.push(c);
+        }
       }
-      strategyStats.xhr = xhrImages.size;
-      console.log(`[extract-dna] 📡 XHR/API interception: ${xhrImages.size} images captured`);
 
-      // Merge CSS images
+      // Merge external CSS background images
       for (const img of cssImages) {
         if (!extractedImages.includes(img)) extractedImages.push(img);
       }
+      if (cssImages.length > 0) console.log(`[extract-dna] 🎨 CSS: +${cssImages.length} images`);
 
-      // ════════════════════════════════════════════
-      // STRATEGY D: SITEMAP.XML CRAWLING
-      // ════════════════════════════════════════════
-      console.log("[extract-dna] 🗺️ Attempting sitemap.xml crawl...");
-      let sitemapLinks: string[] = [];
-      try {
-        const sitemapUrls = [
-          new URL("/sitemap.xml", url).href,
-          new URL("/sitemap_index.xml", url).href,
-          new URL("/wp-sitemap.xml", url).href,
-          new URL("/sitemap-index.xml", url).href,
-        ];
-
-        for (const smUrl of sitemapUrls) {
-          try {
-            const smResp = await fetch(smUrl, {
-              headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/xml,text/xml" },
-              signal: AbortSignal.timeout(5000),
-            });
-            if (!smResp.ok) continue;
-            const smText = await smResp.text();
-            if (!smText.includes("<url") && !smText.includes("<sitemap")) continue;
-
-            // Extract <loc> URLs
-            const locMatches = smText.matchAll(/<loc>\s*(.*?)\s*<\/loc>/gi);
-            const smSkip = ["login", "signin", "account", "privacy", "terms", "cookie", "legal", "cart", "checkout", "wp-admin", "feed"];
-            const smPriority = ["product", "shop", "collection", "gallery", "about", "feature", "portfolio", "service", "brand"];
-            
-            const priorityLinks: string[] = [];
-            const otherLinks: string[] = [];
-            
-            for (const lm of locMatches) {
-              const locUrl = lm[1].trim();
-              const lower = locUrl.toLowerCase();
-              // Skip non-page URLs
-              if (smSkip.some(s => lower.includes(s))) continue;
-              if (lower.endsWith(".pdf") || lower.endsWith(".zip") || lower.endsWith(".xml")) continue;
-              // Already crawled?
-              if (extractedImages.some(img => img.includes(locUrl))) continue;
-              
-              if (smPriority.some(p => lower.includes(p))) {
-                priorityLinks.push(locUrl);
-              } else {
-                otherLinks.push(locUrl);
-              }
-            }
-            
-            // If this was a sitemap index, recursively get child sitemaps
-            if (smText.includes("<sitemap")) {
-              console.log("[extract-dna] 🗺️ Found sitemap index, parsing child sitemaps...");
-              const childSitemaps = smText.match(/<loc>\s*(.*?)\s*<\/loc>/gi) || [];
-              for (const childLoc of childSitemaps.slice(0, 5)) {
-                const childUrl = childLoc.replace(/<\/?loc>/gi, "").trim();
-                try {
-                  const childResp = await fetch(childUrl, {
-                    headers: { "User-Agent": "Mozilla/5.0" },
-                    signal: AbortSignal.timeout(5000),
-                  });
-                  if (childResp.ok) {
-                    const childText = await childResp.text();
-                    const childLocs = childText.matchAll(/<loc>\s*(.*?)\s*<\/loc>/gi);
-                    for (const cl of childLocs) {
-                      const cUrl = cl[1].trim();
-                      const cLower = cUrl.toLowerCase();
-                      if (smSkip.some(s => cLower.includes(s))) continue;
-                      if (smPriority.some(p => cLower.includes(p))) {
-                        priorityLinks.push(cUrl);
-                      } else {
-                        otherLinks.push(cUrl);
-                      }
-                    }
-                  }
-                } catch { /* skip child */ }
-              }
-            }
-            
-            sitemapLinks = [...priorityLinks, ...otherLinks];
-            console.log(`[extract-dna] 🗺️ Sitemap: ${sitemapLinks.length} URLs found (${priorityLinks.length} priority)`);
-            break; // Found a working sitemap
-          } catch { /* try next sitemap URL */ }
-        }
-      } catch (err) {
-        console.warn("[extract-dna] ⚠ Sitemap crawl error:", err);
-      }
-
-      // ── CRAWL LEVEL 2 PAGES (DOM-discovered + sitemap-discovered) ──
-      // Combine DOM-discovered links with sitemap links, deduplicate
-      const domLinks = mainData.internalLinks.slice(0, 10);
-      const allCrawlLinks = new Set<string>([...domLinks]);
-      for (const sl of sitemapLinks) {
-        if (!allCrawlLinks.has(sl) && allCrawlLinks.size < 20) {
-          allCrawlLinks.add(sl);
-        }
-      }
-      const finalCrawlLinks = Array.from(allCrawlLinks);
-
-      if (finalCrawlLinks.length > 0) {
-        console.log(`[extract-dna] 🔗 Crawling ${finalCrawlLinks.length} sub-pages (${domLinks.length} DOM + ${finalCrawlLinks.length - domLinks.length} sitemap)...`);
-
-        const scrapeSubPage = async (link: string) => {
-          const subPage = await context.newPage();
-          try {
-            await subPage.goto(link, { waitUntil: "domcontentloaded", timeout: 10000 });
-            try { await subPage.waitForLoadState("networkidle", { timeout: 3000 }); } catch { /* ok */ }
-            await autoScroll(subPage);
-            const subData = await scrapePage(subPage);
-            console.log(`[extract-dna]   ✅ ${link} — +${subData.images.length} images`);
-            return subData;
-          } catch (err) {
-            console.warn(`[extract-dna]   ⚠ Failed: ${link}`, err);
-            return null;
-          } finally {
-            await subPage.close();
-          }
-        };
-
-        // Run in batches of 5 to avoid overwhelming the browser
-        const batches: string[][] = [];
-        for (let i = 0; i < finalCrawlLinks.length; i += 5) {
-          batches.push(finalCrawlLinks.slice(i, i + 5));
-        }
-
-        for (const batch of batches) {
-          const subResults = await Promise.allSettled(batch.map(scrapeSubPage));
-          for (const result of subResults) {
+      // Crawl top sitemap product/gallery pages not already visited
+      if (sitemapUrls.length > 0) {
+        const crawledUrls = new Set([url, ...internalLinks]);
+        const sitemapTargets = sitemapUrls.filter((u) => !crawledUrls.has(u)).slice(0, 4);
+        if (sitemapTargets.length > 0) {
+          console.log(`[extract-dna] 🗺 Crawling ${sitemapTargets.length} sitemap pages...`);
+          const sitemapCrawlResults = await Promise.allSettled(sitemapTargets.map(scrapeSubPage));
+          for (const result of sitemapCrawlResults) {
             if (result.status !== "fulfilled" || !result.value) continue;
-            const subData = result.value;
-            strategyStats.subPages += subData.images.length;
-            for (const img of subData.images) {
+            for (const img of result.value.images) {
               if (!extractedImages.includes(img)) extractedImages.push(img);
             }
-            if (subData.textSample) textSample += " | " + subData.textSample;
-            for (const c of subData.colors) {
-              if (!extractedColors.includes(c)) extractedColors.push(c);
-            }
           }
         }
-        strategyStats.sitemap = sitemapLinks.length;
       }
+
+      // Flush pending JSON API promises then merge all network-intercepted images
+      await Promise.allSettled(jsonImagePromises);
+      for (const img of networkImages) {
+        if (!extractedImages.includes(img)) extractedImages.push(img);
+      }
+      console.log(`[extract-dna] 🌐 Network: +${networkImages.length} images`);
 
       // Handle manifest logo
       if (extractedLogo.startsWith("__MANIFEST__:")) {
@@ -1011,19 +745,6 @@ export async function POST(req: Request) {
           extractedLogo = "";
         }
       }
-
-      // ── STRATEGY SUMMARY LOG ──
-      console.log(`[extract-dna] ════════════════════════════════════`);
-      console.log(`[extract-dna] 📊 IMAGE STRATEGY BREAKDOWN:`);
-      console.log(`[extract-dna]   DOM scrape (15 strategies): ${strategyStats.dom}`);
-      console.log(`[extract-dna]   Network interception:       ${strategyStats.network}`);
-      console.log(`[extract-dna]   XHR/API interception:       ${strategyStats.xhr}`);
-      console.log(`[extract-dna]   Carousel automation:        ${strategyStats.carousel}`);
-      console.log(`[extract-dna]   CSS stylesheet parsing:     ${strategyStats.css}`);
-      console.log(`[extract-dna]   Sitemap URLs discovered:    ${strategyStats.sitemap}`);
-      console.log(`[extract-dna]   Sub-page crawl images:      ${strategyStats.subPages}`);
-      console.log(`[extract-dna]   TOTAL RAW (before dedup):   ${extractedImages.length}`);
-      console.log(`[extract-dna] ════════════════════════════════════`);
 
       await browser.close();
       browser = null;
@@ -1088,16 +809,47 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── POST-PROCESSING — PRODUCTION-GRADE IMAGE PIPELINE ──
+    // ── POST-PROCESSING ──
 
-    // Step 1: Filter images for quality (strict exclusion)
+    // Filter images for quality
+    // Quality score: rewards high-res size cues, content-type hints, modern formats;
+    // penalises thumbnails, icons, and explicitly small dimensions.
+    const scoreImage = (u: string): number => {
+      const lower = u.toLowerCase();
+      let score = 0;
+      const dimMatch = u.match(/[_-](\d{3,4})x(\d{3,4})/i);
+      if (dimMatch) {
+        const w = parseInt(dimMatch[1]), h = parseInt(dimMatch[2]);
+        if (w >= 1200 || h >= 1200) score += 30;
+        else if (w >= 800 || h >= 800) score += 20;
+        else if (w >= 400 || h >= 400) score += 5;
+        else score -= 15;
+      }
+      const wMatch = u.match(/[?&](?:w|width)=(\d+)/i);
+      if (wMatch) {
+        const w = parseInt(wMatch[1]);
+        if (w >= 1200) score += 25;
+        else if (w >= 800) score += 15;
+        else if (w >= 400) score += 5;
+        else if (w < 200) score -= 20;
+      }
+      if (/\.(webp|avif)(\?|$)/i.test(u)) score += 4;
+      if (/\/(product|hero|banner|feature|gallery|portfolio|campaign|lifestyle|collection|look|editorial|showcase)/i.test(lower)) score += 18;
+      if (/\/(about|brand|identity|team|story|culture)/i.test(lower)) score += 10;
+      if (/\/(images?|img|media|photos?|assets?|uploads?|static)\//i.test(lower)) score += 5;
+      if (/zoom|retina|highres|fullsize|full[_-]?size|hi[_-]?res|@2x|@3x/i.test(lower)) score += 15;
+      if (/thumbnail|thumb|\bsmall\b|\bmini\b|[_-]sm[_-]|[_-]xs[_-]/i.test(lower)) score -= 25;
+      if (/[_-](50|75|80|100|120|150)x/i.test(u)) score -= 20;
+      if (/icon|sprite|arrow|check|star|dot|close|menu/i.test(lower)) score -= 30;
+      return score;
+    };
+
     extractedImages = extractedImages.filter(isUsefulImage);
-    
-    // Step 2: Deduplicate by normalized URL (strips dimension suffixes, CDN params)
+
+    // Sort by quality score before dedup so the best variant of each image wins
+    extractedImages.sort((a, b) => scoreImage(b) - scoreImage(a));
     const seenNormalized = new Set<string>();
     const deduped: string[] = [];
-    // Sort by URL length descending — longer URLs tend to be higher resolution
-    extractedImages.sort((a, b) => b.length - a.length);
     for (const img of extractedImages) {
       const key = normalizeImageUrl(img);
       if (!seenNormalized.has(key)) {
@@ -1105,24 +857,7 @@ export async function POST(req: Request) {
         deduped.push(img);
       }
     }
-
-    // Step 3: Score and rank images — keep top 50 highest-scoring brand images
-    const scoredImages: ScoredImage[] = deduped.map((url, idx) => ({
-      url,
-      score: scoreImageUrl(url, idx, deduped.length),
-      width: 0,
-      height: 0,
-    }));
-
-    // Sort by score descending, take top 50
-    scoredImages.sort((a, b) => b.score - a.score);
-    extractedImages = scoredImages.slice(0, 50).map(s => s.url);
-
-    console.log(`[extract-dna] 🖼️ Image scoring: ${deduped.length} candidates → ${extractedImages.length} top-quality images`);
-    // Log top 5 scores for debugging
-    scoredImages.slice(0, 5).forEach((s, i) => {
-      console.log(`[extract-dna]   #${i + 1} score=${s.score} ${s.url.slice(0, 80)}...`);
-    });
+    extractedImages = deduped.slice(0, 150);
 
     // Clearbit logo fallback
     if (!extractedLogo || !extractedLogo.startsWith("http")) {
@@ -1155,6 +890,7 @@ SCRAPED DATA:
 - Logo URL: ${extractedLogo}
 - Full Website Text (from homepage + internal pages): """${textSample}"""
 
+YOUR TASK: Return ONLY a valid JSON object (no markdown, no explanation, no code fences) with this EXACT schema:
 {
   "brandName": "The official brand/company name",
   "logoUrl": "${extractedLogo}",
@@ -1174,38 +910,6 @@ SCRAPED DATA:
   "brandAesthetic": "comma-separated list of 3-5 visual/aesthetic descriptors",
   "toneOfVoice": "comma-separated list of 3-5 tone descriptors",
   "businessOverview": "2-3 sentence overview of what this business does, their products/services, and their positioning",
-  "visual_identity": {
-    "primary_colors": [],
-    "secondary_colors": [],
-    "background_style": "",
-    "lighting_style": "",
-    "composition_style": "",
-    "spacing_style": "",
-    "design_density": "",
-    "ui_style": "",
-    "image_style": "",
-    "illustration_style": "",
-    "texture_style": ""
-  },
-  "brand_voice": {
-    "tone": [],
-    "writing_style": [],
-    "sentence_length": "",
-    "emotional_style": "",
-    "cta_style": "",
-    "personality_traits": [],
-    "banned_words": [],
-    "preferred_phrases": []
-  },
-  "content_patterns": {
-    "hooks": [],
-    "cta_patterns": [],
-    "carousel_patterns": [],
-    "headline_patterns": [],
-    "visual_patterns": [],
-    "post_structures": [],
-    "ad_frameworks": []
-  },
   "images": []
 }
 
@@ -1216,8 +920,7 @@ STRICT REQUIREMENTS:
 4. All fields MUST be filled with real, accurate data. NO placeholder or generic text.
 5. businessOverview must describe the ACTUAL products/services mentioned.
 6. If extracted fonts are system fonts, suggest the closest Google Font equivalent.
-7. Return ONLY the JSON object. No other text.
-8. ANTIGRAVITY TEXT PROCESSOR STRICT RULES: Extract clean, structured text. Deduplicate any noise. No unnecessary symbols.`;
+7. Return ONLY the JSON object. No other text.`;
 
     let parsedDna: any;
     try {
@@ -1250,180 +953,98 @@ STRICT REQUIREMENTS:
     console.log("[extract-dna] ✅ Brand DNA complete:", parsedDna.brandName);
 
     // ══════════════════════════════════════════════════════════
-    // PHASE 3 — DOCUMENT GENERATION (zero-hallucination, website-sourced)
+    // PHASE 3 — DOCUMENT GENERATION (smart model routing per doc type)
     // ══════════════════════════════════════════════════════════
 
-    const brandName = parsedDna.brandName || "Brand";
-    const websiteUrl = url;
-    const overview = parsedDna.businessOverview || "";
-    const tagline = parsedDna.tagline || "";
-    const brandValues = parsedDna.brandValue || "";
-    const brandAesthetic = parsedDna.brandAesthetic || "";
-    const toneOfVoice = parsedDna.toneOfVoice || "";
-    const websiteText = textSample.slice(0, 8000);
-
-    const sharedContext = `
-BRAND: ${brandName}
-WEBSITE: ${websiteUrl}
-OVERVIEW: ${overview}
-TAGLINE: ${tagline}
-BRAND VALUES: ${brandValues}
-BRAND AESTHETIC: ${brandAesthetic}
-TONE OF VOICE: ${toneOfVoice}
-COLORS: ${extractedColors.slice(0, 10).join(", ")}
-FONTS: ${extractedFonts.slice(0, 5).join(", ")}
-
-=== FULL WEBSITE TEXT (scraped from homepage + ${extractedImages.length > 0 ? "sub-pages" : "homepage only"}) ===
-${websiteText}
-=== END WEBSITE TEXT ===
-
-CRITICAL RULES:
-1. Use ONLY information found in the website text above.
-2. If information is NOT in the website text → write "Not found on website".
-3. Do NOT hallucinate, assume, or use prior knowledge.
-4. Every claim must be traceable to the website text.
-5. DO NOT use markdown tables; use bulleted lists.
-6. No placeholders. No generic marketing language.
+    const brandContext = `
+Brand: ${parsedDna.brandName}
+Website: ${url}
+Overview: ${parsedDna.businessOverview}
+Tagline: ${parsedDna.tagline}
+Brand Values: ${parsedDna.brandValue}
+Brand Aesthetic: ${parsedDna.brandAesthetic}
+Tone of Voice: ${parsedDna.toneOfVoice}
+Website Text: """${textSample.slice(0, 3000)}"""
 `.trim();
 
-    const profilePrompt = `You are a strict, zero-hallucination business analyst. Write a Business Profile for ${brandName} using ONLY the website content below.
+    const docPrompts = {
+      businessProfile: `You are a senior brand analyst. Using ONLY information from the website text below, write a detailed Business Profile document in markdown.
 
-${sharedContext}
+${brandContext}
 
-OUTPUT FORMAT (markdown):
-
-# ${brandName} – Business Profile
+Write the Business Profile with these exact sections:
+# ${parsedDna.brandName} – Business Profile
 
 ## Overview
-(2-3 sentences from website text about what the business does)
+2-3 paragraphs: what the business does, mission, founding story if mentioned, market positioning.
 
-## Products/Services
-- **[Product Name]** – description (ONLY products explicitly mentioned on website)
-- If none found → "Not found on website"
+## Products & Services
+List every product or service mentioned with a short description of each.
 
 ## Key Selling Points
-- ONLY explicit value propositions from the website
-- If none found → "Not found on website"
+5-8 bullet points of the most compelling reasons to choose this brand.
 
 ## Retail Presence
-- Where products are sold (ONLY if mentioned on website)
-- If not mentioned → "Not found on website"
+Where products are sold — online store, retailers, marketplaces, physical locations.
 
 ## Target Audience
-- ONLY if explicitly stated on website
-- If not stated → "Not found on website"
+Demographics, psychographics, interests based on the website tone and content.
 
-## Founder Story
-- ONLY if mentioned on website
-- If not mentioned → "Not found on website"
+Rules: Only facts from website text. Use ## headers, - bullets, **bold** key terms. Min 400 words.`,
 
-## Brand Identity
-- Tagline: ${tagline || "Not found on website"}
-- Values: ${brandValues || "Not found on website"}
-- Aesthetic: ${brandAesthetic || "Not found on website"}
-- Tone: ${toneOfVoice || "Not found on website"}
+      marketResearch: `You are a senior market researcher. Write a comprehensive Market Research document in markdown.
 
-## Digital Presence
-- Website: ${websiteUrl}
-- Images captured: ${extractedImages.length}
+${brandContext}
 
-## Gaps & Missing Information
-List what was NOT found on the website.
-
-OUTPUT ONLY THE MARKDOWN. No explanations.`;
-
-    const researchPrompt = `You are a strict, zero-hallucination market researcher. Write Market Research for ${brandName} using ONLY the website content below.
-
-${sharedContext}
-
-OUTPUT FORMAT (markdown):
-
-# ${brandName} – Market Research
+Write the Market Research with these exact sections:
+# ${parsedDna.brandName} – Market Research
 
 ## Market Opportunity
-- ONLY if stated on website, otherwise "Not found on website"
+The market this brand operates in, current trends, growth indicators, why now is a good time.
 
-## Keywords
-- Extract ONLY repeated or emphasized terms from the website text
-- Do NOT add generic industry keywords
+## Competitive Landscape
+List 8-10 REAL named competitor companies. For each, 1-2 lines on what they do and how they compare.
 
-## Competitors
-- ONLY if the website explicitly mentions competitor names
-- Otherwise → "Not found on website"
+## SEO & GEO Keywords
+15-20 high-value search keywords grouped by intent (informational, commercial, transactional).
 
-## Trend Tailwinds
-- ONLY if the website mentions industry trends
-- Otherwise → "Not found on website"
+## Target Audiences on Social
+4-5 distinct audience segments — platform preferences, what content resonates, how to reach them.
 
-## Key Risks
-- ONLY if mentioned on website
-- Otherwise → "Not found on website"
+Rules: Real named competitors only. Use ## headers, - bullets, **bold** key names. Min 500 words.`,
 
-## Target Audiences
-- ONLY if explicitly described on the website
-- Otherwise → "Not found on website"
+      strategy: `You are a senior social media strategist. Write a detailed Social Media Strategy document in markdown.
 
-## Brand Positioning Signals
-- Tagline, value props, visual style cues found on the website
+${brandContext}
 
-## Digital Footprint
-- Website: ${websiteUrl}
-- Brand images: ${extractedImages.length}
-- Colors identified: ${extractedColors.length}
-- Fonts identified: ${extractedFonts.length}
+Write the Social Media Strategy with these exact sections:
+# ${parsedDna.brandName} – Social Media Strategy
 
-## Gaps & Missing Information
-List what was NOT found on the website.
-
-OUTPUT ONLY THE MARKDOWN. No explanations.`;
-
-    const strategyPrompt = `You are a strict, zero-hallucination social media strategist. Write a Social Strategy for ${brandName} using ONLY the website content below.
-
-${sharedContext}
-
-OUTPUT FORMAT (markdown):
-
-# ${brandName} – Social Strategy
-
-## Platforms
-- ONLY from visible social links or mentions on the website
-- If no social links found → "Not found on website"
+## Priority Platforms
+Top 3-4 platforms — why each is a priority, audience, and content format.
 
 ## Content Pillars
-- Derived ONLY from products, features, or blog topics found on the website
-- Each pillar must reference specific content from the website
-- Do NOT create generic pillars
+4-6 content themes with name, description, 2-3 example post ideas each.
 
-## Posting Ideas
-- Each idea MUST directly map to an actual product, feature, or content from the website
-- No generic ideas
+## Posting Cadence
+Recommended posting frequency per platform.
 
 ## Messaging Hierarchy
-- ONLY from actual taglines, headlines, and CTAs found on the website
-- If insufficient → "Not found on website"
+3-4 core messages ranked by priority — lead message, secondary hooks, proof points.
 
-## Visual Guidelines for Social
-- Primary Color: ${extractedColors[0] || "Not found"}
-- Accent Color: ${extractedColors[1] || "Not found"}
-- Typography: ${extractedFonts[0] || "Not found"}
-- Style: ${brandAesthetic || "Not found"}
+## Quick Wins
+5-7 immediately actionable tactics for the next 30 days.
 
-## Quick Wins (Next 30 Days)
-- ONLY actionable items that reference specific products/content from the website
-- No generic tactics
+Rules: Specific to ${parsedDna.brandName}'s industry. Tone of voice: ${parsedDna.toneOfVoice}. Min 500 words.`,
+    };
 
-## Gaps & Missing Information
-List what was NOT found on the website.
-
-OUTPUT ONLY THE MARKDOWN. No explanations.`;
-
-    // Generate all 3 docs in parallel with sonnet tier for quality
+    // Each doc type uses its own optimal model order via smart router
     const [businessProfile, marketResearch, strategy] = await Promise.all([
-      callGemini({ taskType: "business-profile", prompt: profilePrompt, minLength: 300, costTier: "sonnet" })
+      callGemini({ taskType: "business-profile", prompt: docPrompts.businessProfile, minLength: 300 })
         .then(r => r.text).catch(() => ""),
-      callGemini({ taskType: "market-research", prompt: researchPrompt, minLength: 300, costTier: "sonnet" })
+      callGemini({ taskType: "market-research", prompt: docPrompts.marketResearch, minLength: 300 })
         .then(r => r.text).catch(() => ""),
-      callGemini({ taskType: "social-strategy", prompt: strategyPrompt, minLength: 300, costTier: "sonnet" })
+      callGemini({ taskType: "social-strategy", prompt: docPrompts.strategy, minLength: 300 })
         .then(r => r.text).catch(() => ""),
     ]);
 
