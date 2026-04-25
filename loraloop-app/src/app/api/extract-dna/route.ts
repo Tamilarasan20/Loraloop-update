@@ -195,14 +195,25 @@ async function scrapePage(page: Page) {
 
     const addImg = (src: string | null | undefined) => {
       if (!src) return;
-      let s = extractCleanUrl(src);
+      let s = extractCleanUrl(src.trim());
       if (s.startsWith("//")) s = "https:" + s;
-      if (s && !seenSrcs.has(s) && s.startsWith("http") && !s.includes(" ")) {
-        // Exclude base64 strings and common tracking pixels
-        if (s.startsWith("data:")) return;
+      // Resolve relative URLs
+      if (s && !s.startsWith("http") && !s.startsWith("data:")) {
+        try { s = new URL(s, document.baseURI).href; } catch { return; }
+      }
+      if (s && !seenSrcs.has(s) && s.startsWith("http") && !s.includes(" ") && !s.startsWith("data:")) {
         seenSrcs.add(s);
         images.push(s);
       }
+    };
+
+    // Extracts all URLs from a srcset string
+    const addSrcset = (srcset: string | null | undefined) => {
+      if (!srcset) return;
+      srcset.split(",").forEach((entry: string) => {
+        const u = entry.trim().split(/\s+/)[0];
+        if (u) addImg(u);
+      });
     };
 
     // ── LOGO — 10-strategy detection ──
@@ -281,101 +292,208 @@ async function scrapePage(page: Page) {
       if (icon) logoUrl = (icon as HTMLLinkElement).href;
     }
 
-    // 7. manifest.json icons (just get the href for now)
+    // 7. Manifest
     if (!logoUrl) {
       const manifest = document.querySelector('link[rel="manifest"]');
-      if (manifest) {
-        // We'll handle this on the server side
-        logoUrl = "__MANIFEST__:" + (manifest as HTMLLinkElement).href;
-      }
+      if (manifest) logoUrl = "__MANIFEST__:" + (manifest as HTMLLinkElement).href;
     }
 
-    // ── IMAGES — aggressive multi-source capture ──
+    // ══════════════════════════════════════════════════════════════════
+    // ULTRA-AGGRESSIVE IMAGE EXTRACTION — 15 STRATEGIES
+    // ══════════════════════════════════════════════════════════════════
 
-    // Strategy 1: All <img> tags with every lazy-load attribute variant
-    const lazyAttrs = ["src", "data-src", "data-lazy-src", "data-original",
-      "data-lazy", "data-image", "data-bg", "data-full", "data-hi-res", "loading-src"];
+    // ── STRATEGY 1: Meta tags (OG, Twitter, schema) ──
+    const metaImgSelectors = [
+      'meta[property="og:image"]', 'meta[property="og:image:url"]',
+      'meta[name="twitter:image"]', 'meta[name="twitter:image:src"]',
+      'meta[itemprop="image"]', 'meta[property="product:image"]',
+    ];
+    for (const sel of metaImgSelectors) {
+      const el = document.querySelector(sel);
+      if (el) addImg((el as HTMLMetaElement).content);
+    }
+
+
+    // ── STRATEGY 2: All <img> tags — 30+ lazy-load attribute variants ──
+    const lazyAttrs = [
+      "src", "data-src", "data-lazy-src", "data-original", "data-lazy",
+      "data-image", "data-bg", "data-full", "data-hi-res", "loading-src",
+      "data-url", "data-img-src", "data-img-url", "data-echo",
+      "data-large", "data-large-file", "data-retina", "data-2x",
+      "data-zoom-image", "data-highres", "data-original-src",
+      "data-fallback-src", "data-noscript-src", "data-default-src",
+      "data-swiper-lazy", "data-flickity-lazyload", "data-lazy-load",
+      "data-pagespeed-lazy-src",
+    ];
     for (const img of Array.from(document.querySelectorAll("img"))) {
-      // Validate dimensions if possible to avoid tiny icons/pixels
-      const rect = img.getBoundingClientRect();
-      const naturalWidth = img.naturalWidth || 0;
-      const naturalHeight = img.naturalHeight || 0;
-      const isTooSmall = (naturalWidth > 0 && naturalWidth < 150) || 
-                         (naturalHeight > 0 && naturalHeight < 150) || 
-                         (rect.width > 0 && rect.width < 150) || 
-                         (rect.height > 0 && rect.height < 150);
-      
-      if (isTooSmall) continue;
-
       for (const attr of lazyAttrs) {
         const val = img.getAttribute(attr);
-        if (!val) continue;
-        if (val.startsWith("http") || val.startsWith("//")) {
-          addImg(val);
-        } else if (val.startsWith("/")) {
-          try { addImg(new URL(val, document.baseURI).href); } catch { /* skip */ }
-        }
+        if (val) addImg(val);
       }
-      // srcset + data-srcset — split properly, take LARGEST resolution
-      const srcset = img.getAttribute("srcset") || img.getAttribute("data-srcset");
-      if (srcset) {
-        srcset.split(",").forEach((entry: string) => {
-          const u = entry.trim().split(/\s+/)[0];
-          if (!u) return;
-          try { addImg(new URL(u, document.baseURI).href); } catch { addImg(u); }
-        });
+      addSrcset(img.getAttribute("srcset"));
+      addSrcset(img.getAttribute("data-srcset"));
+      addSrcset(img.getAttribute("data-lazy-srcset"));
+    }
+
+    // ── STRATEGY 3: <picture> and <video> <source> ──
+    for (const source of Array.from(document.querySelectorAll("picture source, video source"))) {
+      addSrcset(source.getAttribute("srcset"));
+      addImg(source.getAttribute("src"));
+    }
+
+    // ── STRATEGY 4: <video> poster ──
+    for (const video of Array.from(document.querySelectorAll("video[poster]"))) {
+      addImg(video.getAttribute("poster"));
+    }
+
+    // ── STRATEGY 5: CSS computed background-image on EVERY element ──
+    for (const el of Array.from(document.querySelectorAll("*"))) {
+      try {
+        const cs = window.getComputedStyle(el as Element);
+        const bgImg = cs.backgroundImage;
+        if (bgImg && bgImg !== "none") {
+          const matches = bgImg.matchAll(/url\(["']?(.*?)["']?\)/g);
+          for (const m of matches) {
+            if (m[1] && !m[1].startsWith("data:image/svg") && !m[1].startsWith("data:image/gif")) {
+              addImg(m[1]);
+            }
+          }
+        }
+      } catch { /* skip */ }
+    }
+
+    // ── STRATEGY 6: Inline style background-image ──
+    for (const el of Array.from(document.querySelectorAll("[style]"))) {
+      const style = el.getAttribute("style") || "";
+      if (style.includes("background") || style.includes("url(")) {
+        const matches = style.matchAll(/url\(["']?(.*?)["']?\)/g);
+        for (const m of matches) addImg(m[1]);
       }
     }
 
-    // Strategy 2: Background Images
-    const allElements = document.querySelectorAll("*");
-    for (const el of Array.from(allElements)) {
-      const style = window.getComputedStyle(el);
-      const bgImg = style.backgroundImage;
-      if (bgImg && bgImg !== "none") {
-        const m = bgImg.match(/url\(['"]?(.*?)['"]?\)/);
-        if (m && m[1]) {
-          const val = m[1];
-          if (val.startsWith("http") || val.startsWith("//")) {
-            addImg(val);
-          } else if (val.startsWith("/")) {
-            try { addImg(new URL(val, document.baseURI).href); } catch { /* skip */ }
+    // ── STRATEGY 7: <a href> linking directly to image files ──
+    for (const a of Array.from(document.querySelectorAll("a[href]"))) {
+      const href = (a as HTMLAnchorElement).href;
+      if (/\.(jpg|jpeg|png|webp|avif|gif|bmp|svg)([\?#]|$)/i.test(href)) addImg(href);
+    }
+
+    // ── STRATEGY 8: <object> and <embed> data attributes ──
+    for (const el of Array.from(document.querySelectorAll("object[data], embed[src]"))) {
+      const src = el.getAttribute("data") || el.getAttribute("src") || "";
+      if (/\.(jpg|jpeg|png|webp|avif|svg)/i.test(src)) addImg(src);
+    }
+
+    // ── STRATEGY 9: <noscript> fallback images ──
+    for (const ns of Array.from(document.querySelectorAll("noscript"))) {
+      const html = ns.innerHTML;
+      const srcMatch = html.match(/src=['"]([^'"]+)['"]/);
+      if (srcMatch) addImg(srcMatch[1]);
+      const srcsetMatch = html.match(/srcset=['"]([^'"]+)['"]/);
+      if (srcsetMatch) addSrcset(srcsetMatch[1]);
+    }
+
+    // ── STRATEGY 10: JSON-LD structured data (Product, ImageObject, etc.) ──
+    for (const script of Array.from(document.querySelectorAll('script[type="application/ld+json"]'))) {
+      try {
+        const data = JSON.parse(script.textContent || "");
+        const extractFromJson = (obj: any) => {
+          if (!obj || typeof obj !== "object") return;
+          if (Array.isArray(obj)) { obj.forEach(extractFromJson); return; }
+          for (const key of ["image", "url", "contentUrl", "thumbnailUrl", "logo", "photo"]) {
+            if (obj[key]) {
+              if (typeof obj[key] === "string") addImg(obj[key]);
+              else if (Array.isArray(obj[key])) obj[key].forEach((u: any) => typeof u === "string" ? addImg(u) : addImg(u?.url));
+              else if (obj[key]?.url) addImg(obj[key].url);
+            }
+          }
+          Object.values(obj).forEach(extractFromJson);
+        };
+        extractFromJson(data);
+      } catch { /* skip malformed JSON-LD */ }
+    }
+
+    // ── STRATEGY 11: Next.js __NEXT_DATA__ injection ──
+    const nextDataEl = document.getElementById("__NEXT_DATA__");
+    if (nextDataEl) {
+      try {
+        const nextData = JSON.parse(nextDataEl.textContent || "");
+        const extractImagesFromObject = (obj: any, depth = 0) => {
+          if (depth > 6 || !obj) return;
+          if (typeof obj === "string" && /^https?:\/\/.+\.(jpg|jpeg|png|webp|avif)/i.test(obj)) { addImg(obj); }
+          else if (Array.isArray(obj)) { obj.forEach(item => extractImagesFromObject(item, depth + 1)); }
+          else if (typeof obj === "object") { for (const val of Object.values(obj)) extractImagesFromObject(val, depth + 1); }
+        };
+        extractImagesFromObject(nextData);
+      } catch { /* skip */ }
+    }
+
+    // ── STRATEGY 12: Shopify / inline script image URLs ──
+    for (const script of Array.from(document.querySelectorAll("script:not([src])"))) {
+      const text = script.textContent || "";
+      if (text.includes("cdn.shopify.com") || text.includes("featured_image")) {
+        const urls = text.match(/https?:\/\/cdn\.shopify\.com\/[^\s"'\\]+\.(jpg|jpeg|png|webp)/gi) || [];
+        urls.forEach(addImg);
+      }
+      if (text.includes("product") || text.includes("gallery") || text.includes("carousel") || text.includes("images")) {
+        const matches = text.match(/["'](https?:\/\/[^"']+\.(jpg|jpeg|png|webp|avif))["']/gi) || [];
+        matches.slice(0, 40).forEach(m => addImg(m.replace(/["']/g, "")));
+      }
+    }
+
+    // ── STRATEGY 13: data-* attributes containing image URLs ──
+    const imgDataSelectors = [
+      "[data-background]", "[data-bg]", "[data-image]", "[data-img]",
+      "[data-thumb]", "[data-cover]", "[data-hero]", "[data-poster]",
+      "[data-slide-bg]", "[data-carousel-src]", "[data-lazy-background]",
+      "[data-fancybox]", "[data-swiper-slide-image]",
+    ];
+    for (const sel of imgDataSelectors) {
+      for (const el of Array.from(document.querySelectorAll(sel))) {
+        for (const attr of Array.from((el as Element).attributes)) {
+          if (attr.name.startsWith("data-") && attr.value.startsWith("http") && /\.(jpg|jpeg|png|webp|avif)/i.test(attr.value)) {
+            addImg(attr.value);
           }
         }
       }
     }
 
-    // Strategy 2: <picture> > <source>
-    for (const source of Array.from(document.querySelectorAll("picture source"))) {
-      const srcset = source.getAttribute("srcset");
-      if (srcset) {
-        srcset.split(",").forEach((entry) => {
-          const url = entry.trim().split(/\s+/)[0];
-          try { addImg(new URL(url, document.baseURI).href); } catch { addImg(url); }
-        });
+    // ── STRATEGY 14: Scan ALL element attributes for image URLs ──
+    for (const el of Array.from(document.querySelectorAll("*")).slice(0, 3000)) {
+      for (const attr of Array.from((el as Element).attributes)) {
+        const v = attr.value;
+        if (v && v.length > 10 && v.length < 500 && v.startsWith("http") && /\.(jpg|jpeg|png|webp|avif)([\?&]|$)/i.test(v)) {
+          addImg(v);
+        }
       }
     }
 
-    // Strategy 3: <video> poster images
-    for (const video of Array.from(document.querySelectorAll("video[poster]"))) {
-      addImg(video.getAttribute("poster"));
+    // ── STRATEGY 15: CSS custom property image values ──
+    const cssVarPrefixes = ["--bg-image", "--hero-image", "--background-image", "--image-url", "--img-src", "--slide-bg", "--cover"];
+    for (const el of Array.from(document.querySelectorAll("[style]")).slice(0, 300)) {
+      try {
+        const styles = window.getComputedStyle(el as Element);
+        for (const varName of cssVarPrefixes) {
+          const val = styles.getPropertyValue(varName).trim();
+          if (val && val.includes("url(")) {
+            const m = val.match(/url\(["']?(.*?)["']?\)/);
+            if (m) addImg(m[1]);
+          }
+        }
+      } catch { /* skip */ }
     }
 
-    // Strategy 4: CSS background-image on up to 300 elements
+    // ── COLORS & FONTS ──
     const allEls = [
       document.body,
       ...Array.from(document.querySelectorAll(
         "header,footer,nav,main,section,article,aside,div,span,a,button,figure,h1,h2,h3,h4,h5,h6,p,[class*='hero'],[class*='banner'],[class*='slide'],[class*='bg'],[class*='image'],[class*='thumb'],[class*='card'],[class*='cover'],[class*='feature'],[style*='background']"
       )),
-    ].slice(0, 300);
-
+    ];
     const colors = new Set<string>();
     const fonts = new Set<string>();
-
     for (const el of allEls) {
       try {
         const cs = window.getComputedStyle(el);
-        // Colors
         const bg = cs.backgroundColor;
         if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") colors.add(rgb2hex(bg));
         const clr = cs.color;
@@ -384,39 +502,11 @@ async function scrapePage(page: Page) {
         if (border && border !== "rgba(0, 0, 0, 0)" && border !== "transparent" && border !== "rgb(0, 0, 0)") {
           colors.add(rgb2hex(border));
         }
-
-        // Fonts
         if (cs.fontFamily) {
           const primary = cs.fontFamily.split(",")[0].replace(/['"]/g, "").trim();
           if (primary && primary !== "inherit" && primary !== "initial") fonts.add(primary);
         }
-
-        // Background images
-        const bgImg = cs.backgroundImage;
-        if (bgImg && bgImg !== "none") {
-          const matches = bgImg.matchAll(/url\(["']?(.*?)["']?\)/g);
-          for (const m of matches) {
-            if (m[1] && !m[1].startsWith("data:image/svg") && !m[1].startsWith("data:image/gif")) {
-              try { addImg(new URL(m[1], document.baseURI).href); } catch { addImg(m[1]); }
-            }
-          }
-        }
       } catch { /* skip */ }
-    }
-
-    // Strategy 5: Inline style background-image attributes
-    for (const el of Array.from(document.querySelectorAll("[style*='background']"))) {
-      const style = el.getAttribute("style") || "";
-      const matches = style.matchAll(/url\(["']?(.*?)["']?\)/g);
-      for (const m of matches) {
-        try { addImg(new URL(m[1], document.baseURI).href); } catch { addImg(m[1]); }
-      }
-    }
-
-    // Strategy 6: <figure>, <a> with image extensions in href
-    for (const a of Array.from(document.querySelectorAll("a[href]"))) {
-      const href = (a as HTMLAnchorElement).href;
-      if (/\.(jpg|jpeg|png|webp|avif)(\?|$)/i.test(href)) addImg(href);
     }
 
     // ── TEXT — structured extraction ──
@@ -483,26 +573,29 @@ async function scrapePage(page: Page) {
     const seenPaths = new Set<string>([window.location.pathname]);
     const internalLinks: string[] = [];
     const level2Links: string[] = [];
-    const skipPatterns = ["login", "signin", "signup", "register", "cart", "checkout", "account", "privacy", "terms", "cookie", "legal", "#", "mailto:", "tel:", "javascript:", "password", "reset", "unsubscribe", "sitemap.xml"];
+    const skipPatterns = [
+      "login", "signin", "signup", "register", "cart", "checkout",
+      "account", "privacy", "terms", "cookie", "legal", "#", "mailto:",
+      "tel:", "javascript:", "password", "reset", "unsubscribe",
+      "sitemap.xml", "wp-admin", "wp-login", "feed", ".rss", ".atom",
+    ];
     const level2Patterns = [
-      "product", "shop", "collection", "service",  // commerce
-      "feature", "pricing", "price", "plan",       // features/pricing
-      "about", "story", "team", "mission",          // about
-      "blog", "article", "news", "resource",        // content
-      "case-study", "case-studies", "testimonial",   // social proof
-      "work", "portfolio", "project", "gallery",     // portfolio
+      "product", "shop", "collection", "service", "catalogue", "catalog", "menu",
+      "feature", "pricing", "price", "plan", "subscription",
+      "about", "story", "team", "mission", "values", "sustainability",
+      "blog", "article", "news", "resource", "guide", "learn", "press",
+      "case-study", "case-studies", "testimonial", "review", "customer",
+      "work", "portfolio", "project", "gallery", "look-book", "lookbook",
+      "brand", "media", "assets",
     ];
 
     for (const a of Array.from(document.querySelectorAll("a[href]"))) {
       try {
         const href = new URL((a as HTMLAnchorElement).href, document.baseURI);
         const path = href.pathname.toLowerCase();
-        
         if (href.hostname === baseHostname && !seenPaths.has(href.pathname) && path !== "/") {
           if (!skipPatterns.some((s) => path.includes(s) || href.href.includes(s))) {
             seenPaths.add(href.pathname);
-            
-            // Categorize as Level 2 if it matches our patterns
             if (level2Patterns.some(p => path.includes(p))) {
               level2Links.push(href.href);
             } else {
@@ -513,14 +606,14 @@ async function scrapePage(page: Page) {
       } catch { /* skip */ }
     }
 
-    // Combine Level 2 links first, then pad with other internal links up to 10-15
-    const prioritizedLinks = [...level2Links, ...internalLinks].slice(0, 12);
+    // Level 2 first, then all other internal links — up to 15 pages
+    const prioritizedLinks = [...level2Links, ...internalLinks].slice(0, 15);
 
     return {
       colors: Array.from(colors).filter((c) => c.startsWith("#")).slice(0, 25),
       fonts: Array.from(fonts).slice(0, 8),
       logoUrl,
-      images: images.slice(0, 50),
+      images: images.slice(0, 200),
       textSample,
       pageTitle: document.title,
       internalLinks: prioritizedLinks,
@@ -736,7 +829,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // Step 3: Score and rank images — keep only top 20 brand-quality images
+    // Step 3: Score and rank images — keep top 50 highest-scoring brand images
     const scoredImages: ScoredImage[] = deduped.map((url, idx) => ({
       url,
       score: scoreImageUrl(url, idx, deduped.length),
@@ -744,9 +837,9 @@ export async function POST(req: Request) {
       height: 0,
     }));
 
-    // Sort by score descending, take top 20
+    // Sort by score descending, take top 50
     scoredImages.sort((a, b) => b.score - a.score);
-    extractedImages = scoredImages.slice(0, 20).map(s => s.url);
+    extractedImages = scoredImages.slice(0, 50).map(s => s.url);
 
     console.log(`[extract-dna] 🖼️ Image scoring: ${deduped.length} candidates → ${extractedImages.length} top-quality images`);
     // Log top 5 scores for debugging
@@ -880,140 +973,180 @@ STRICT REQUIREMENTS:
     console.log("[extract-dna] ✅ Brand DNA complete:", parsedDna.brandName);
 
     // ══════════════════════════════════════════════════════════
-    // PHASE 3 — DOCUMENT GENERATION (smart model routing per doc type)
+    // PHASE 3 — DOCUMENT GENERATION (zero-hallucination, website-sourced)
     // ══════════════════════════════════════════════════════════
 
-    const brandContext = `
-Brand: ${parsedDna.brandName}
-Website: ${url}
-Overview: ${parsedDna.businessOverview}
-Tagline: ${parsedDna.tagline}
-Brand Values: ${parsedDna.brandValue}
-Brand Aesthetic: ${parsedDna.brandAesthetic}
-Tone of Voice: ${parsedDna.toneOfVoice}
-Website Text: """${textSample.slice(0, 3000)}"""
+    const brandName = parsedDna.brandName || "Brand";
+    const websiteUrl = url;
+    const overview = parsedDna.businessOverview || "";
+    const tagline = parsedDna.tagline || "";
+    const brandValues = parsedDna.brandValue || "";
+    const brandAesthetic = parsedDna.brandAesthetic || "";
+    const toneOfVoice = parsedDna.toneOfVoice || "";
+    const websiteText = textSample.slice(0, 8000);
+
+    const sharedContext = `
+BRAND: ${brandName}
+WEBSITE: ${websiteUrl}
+OVERVIEW: ${overview}
+TAGLINE: ${tagline}
+BRAND VALUES: ${brandValues}
+BRAND AESTHETIC: ${brandAesthetic}
+TONE OF VOICE: ${toneOfVoice}
+COLORS: ${extractedColors.slice(0, 10).join(", ")}
+FONTS: ${extractedFonts.slice(0, 5).join(", ")}
+
+=== FULL WEBSITE TEXT (scraped from homepage + ${extractedImages.length > 0 ? "sub-pages" : "homepage only"}) ===
+${websiteText}
+=== END WEBSITE TEXT ===
+
+CRITICAL RULES:
+1. Use ONLY information found in the website text above.
+2. If information is NOT in the website text → write "Not found on website".
+3. Do NOT hallucinate, assume, or use prior knowledge.
+4. Every claim must be traceable to the website text.
+5. DO NOT use markdown tables; use bulleted lists.
+6. No placeholders. No generic marketing language.
 `.trim();
 
-    const docPrompts = {
-      businessProfile: `You are a senior brand analyst. Using ONLY information from the website text below, write a highly professional Business Profile document in markdown for \${parsedDna.brandName}. 
+    const profilePrompt = `You are a strict, zero-hallucination business analyst. Write a Business Profile for ${brandName} using ONLY the website content below.
 
-\${brandContext}
+${sharedContext}
 
-Write the Business Profile. Format it exactly like this structure:
-# \${parsedDna.brandName} – Business Profile
+OUTPUT FORMAT (markdown):
+
+# ${brandName} – Business Profile
 
 ## Overview
-A detailed paragraph explaining what the business does, who founded it (founder story), and their market positioning (e.g. bridging heritage with modern trends).
+(2-3 sentences from website text about what the business does)
 
-## Products
-- **[Product Name]** – short description or flavor profile.
+## Products/Services
+- **[Product Name]** – description (ONLY products explicitly mentioned on website)
+- If none found → "Not found on website"
 
 ## Key Selling Points
-- Provide 5-8 bullet points of the most compelling reasons to choose this brand (e.g. nutrition facts, ingredients, uses).
+- ONLY explicit value propositions from the website
+- If none found → "Not found on website"
 
 ## Retail Presence
-Where products are sold — simply list retailers, websites, or physical locations.
+- Where products are sold (ONLY if mentioned on website)
+- If not mentioned → "Not found on website"
 
 ## Target Audience
-5 demographic or psychographic bullet points (e.g. Health-conscious UK consumers, Flexitarians).
+- ONLY if explicitly stated on website
+- If not stated → "Not found on website"
 
 ## Founder Story
-A short paragraph about the founders' background, heritage, and why they built the company.
+- ONLY if mentioned on website
+- If not mentioned → "Not found on website"
 
-## Marketing Goals
-- Social media growth and engagement
-- Brand awareness
-- [add any other inferred goals]
+## Brand Identity
+- Tagline: ${tagline || "Not found on website"}
+- Values: ${brandValues || "Not found on website"}
+- Aesthetic: ${brandAesthetic || "Not found on website"}
+- Tone: ${toneOfVoice || "Not found on website"}
 
-## Website
-\${url}
+## Digital Presence
+- Website: ${websiteUrl}
+- Images captured: ${extractedImages.length}
 
-Rules:
-1. Only facts from brand data.
-2. DO NOT use markdown tables; use bulleted lists instead.
-3. Use ## headers, - bullets.
-4. ANTIGRAVITY TEXT PROCESSOR STRICT RULES: Clean text, clear hierarchy, structured format. NO placeholders (e.g., {{title}}, lorem ipsum). Human-readable, polished formatting ready to publish. No unnecessary symbols or encoding issues.`,
+## Gaps & Missing Information
+List what was NOT found on the website.
 
-      marketResearch: `You are a senior market researcher. Write a highly professional Market Research document in markdown for \${parsedDna.brandName}.
+OUTPUT ONLY THE MARKDOWN. No explanations.`;
 
-\${brandContext}
+    const researchPrompt = `You are a strict, zero-hallucination market researcher. Write Market Research for ${brandName} using ONLY the website content below.
 
-Write the Market Research exactly like this structure:
-# \${parsedDna.brandName} – Market Research
+${sharedContext}
+
+OUTPUT FORMAT (markdown):
+
+# ${brandName} – Market Research
 
 ## Market Opportunity
-4-5 bullet points on the market they operate in, growth indicators, and macro trends.
+- ONLY if stated on website, otherwise "Not found on website"
+
+## Keywords
+- Extract ONLY repeated or emphasized terms from the website text
+- Do NOT add generic industry keywords
+
+## Competitors
+- ONLY if the website explicitly mentions competitor names
+- Otherwise → "Not found on website"
 
 ## Trend Tailwinds
-3-4 bullet points on specific consumer trends driving this industry right now.
+- ONLY if the website mentions industry trends
+- Otherwise → "Not found on website"
 
-## Competitive Landscape
-List real named competitor companies. 
-- **[Competitor Name]** – 1 line on what they do and how they compare.
-- **[Competitor Name]** – ...
-Include a bullet point for "\${parsedDna.brandName}'s edge".
+## Key Risks
+- ONLY if mentioned on website
+- Otherwise → "Not found on website"
 
-## Key Risk
-1-2 bullet points on vulnerabilities (e.g. market education needed, algorithm changes).
+## Target Audiences
+- ONLY if explicitly described on the website
+- Otherwise → "Not found on website"
 
-## Social Platform Data (2025)
-- TikTok brand follower growth potential
-- Instagram organic reach trends
-- LinkedIn B2B growth
-- Best-performing content types
+## Brand Positioning Signals
+- Tagline, value props, visual style cues found on the website
 
-## Target Audiences on Social
-4-5 distinct audience segments. Format:
-- **[Segment Name]** – what they respond to / how to frame the product.
+## Digital Footprint
+- Website: ${websiteUrl}
+- Brand images: ${extractedImages.length}
+- Colors identified: ${extractedColors.length}
+- Fonts identified: ${extractedFonts.length}
 
-Rules:
-1. Real named competitors only.
-2. DO NOT use markdown tables; use bulleted lists instead.
-3. ANTIGRAVITY TEXT PROCESSOR STRICT RULES: Clean text, clear hierarchy, structured format. NO placeholders (e.g., {{title}}, lorem ipsum). Human-readable, polished formatting ready to publish. No unnecessary symbols or encoding issues.`,
+## Gaps & Missing Information
+List what was NOT found on the website.
 
-      strategy: `You are a senior social media strategist. Write a highly professional Social Media Strategy document in markdown for \${parsedDna.brandName}.
+OUTPUT ONLY THE MARKDOWN. No explanations.`;
 
-\${brandContext}
+    const strategyPrompt = `You are a strict, zero-hallucination social media strategist. Write a Social Strategy for ${brandName} using ONLY the website content below.
 
-Write the Social Media Strategy exactly like this structure:
-# \${parsedDna.brandName} – Social Media Strategy
+${sharedContext}
 
-## Priority Platforms (Ranked)
-- **[Platform 1]** – why it's a priority and content format.
-- **[Platform 2]** – ...
+OUTPUT FORMAT (markdown):
 
-## Content Pillars (use across all platforms)
-1. **[Pillar 1 Name]** (e.g. Product Proof)
-Provide 3-4 bullet points of example post ideas under this pillar.
-2. **[Pillar 2 Name]** (e.g. Founder Story)
-Provide 3-4 bullet points...
-(Include 4-5 pillars total)
+# ${brandName} – Social Strategy
 
-## Posting Cadence (Recommended)
-Use bullet points to list recommended posting frequency and priority format per platform (e.g. TikTok: 4-5x per week... Instagram: 4x per week).
+## Platforms
+- ONLY from visible social links or mentions on the website
+- If no social links found → "Not found on website"
+
+## Content Pillars
+- Derived ONLY from products, features, or blog topics found on the website
+- Each pillar must reference specific content from the website
+- Do NOT create generic pillars
+
+## Posting Ideas
+- Each idea MUST directly map to an actual product, feature, or content from the website
+- No generic ideas
 
 ## Messaging Hierarchy
-4 core messages ranked by priority:
-- "Lead hook / Main claim" — lead hook
-- "Secondary claim" — secondary hook
-- "Validation" — proof via reviews or demos
-- "Trust factor" — trust + authenticity
+- ONLY from actual taglines, headlines, and CTAs found on the website
+- If insufficient → "Not found on website"
 
-## Quick Wins
-5-6 bullet points of immediate, easily actionable tactics for the next 30 days (e.g. pin a video, repurpose reviews, get founder on camera).
+## Visual Guidelines for Social
+- Primary Color: ${extractedColors[0] || "Not found"}
+- Accent Color: ${extractedColors[1] || "Not found"}
+- Typography: ${extractedFonts[0] || "Not found"}
+- Style: ${brandAesthetic || "Not found"}
 
-Rules:
-1. Specific to \${parsedDna.brandName}'s industry. Tone: \${parsedDna.toneOfVoice}.
-2. DO NOT use markdown tables; use bulleted lists.`,
-    };
+## Quick Wins (Next 30 Days)
+- ONLY actionable items that reference specific products/content from the website
+- No generic tactics
 
-    // Each doc type uses its own optimal model order via smart router
+## Gaps & Missing Information
+List what was NOT found on the website.
+
+OUTPUT ONLY THE MARKDOWN. No explanations.`;
+
+    // Generate all 3 docs in parallel with sonnet tier for quality
     const [businessProfile, marketResearch, strategy] = await Promise.all([
-      callGemini({ taskType: "business-profile", prompt: docPrompts.businessProfile, minLength: 300 })
+      callGemini({ taskType: "business-profile", prompt: profilePrompt, minLength: 300, costTier: "sonnet" })
         .then(r => r.text).catch(() => ""),
-      callGemini({ taskType: "market-research", prompt: docPrompts.marketResearch, minLength: 300 })
+      callGemini({ taskType: "market-research", prompt: researchPrompt, minLength: 300, costTier: "sonnet" })
         .then(r => r.text).catch(() => ""),
-      callGemini({ taskType: "social-strategy", prompt: docPrompts.strategy, minLength: 300 })
+      callGemini({ taskType: "social-strategy", prompt: strategyPrompt, minLength: 300, costTier: "sonnet" })
         .then(r => r.text).catch(() => ""),
     ]);
 
