@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { localDb } from '@/lib/localDb';
 
-const ALLOWED_FIELDS = ['business_profile', 'market_research', 'social_strategy', 'enriched_data', 'brand_guidelines'];
+const ALLOWED_FIELDS = ['business_profile', 'market_research', 'social_strategy', 'enriched_data', 'brand_guidelines', 'brand_memory'];
 
 export async function PUT(req: Request) {
   try {

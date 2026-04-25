@@ -762,13 +762,63 @@ function BoardContent() {
               Reset
             </button>
             <button
-              onClick={() => {
-                localStorage.setItem("approvedBusinessId", businessId);
-                router.push(`/chat?id=${businessId}`);
+              onClick={async () => {
+                if (!businessId || !docs) return;
+                try {
+                  // Persist all KB documents to the backend database
+                  const savePromises = DOC_META.map(meta => {
+                    const content = docs[meta.key];
+                    if (!content || !content.trim()) return Promise.resolve();
+                    return fetch("/api/update-business", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        id: businessId,
+                        field: meta.dbField,
+                        content,
+                      }),
+                    });
+                  });
+
+                  // Also persist brand_memory if we have brand DNA
+                  if (dna) {
+                    savePromises.push(
+                      fetch("/api/update-business", {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          id: businessId,
+                          field: "brand_guidelines",
+                          content: {
+                            colors: [
+                              { hex: dna.colors?.primary, usage: "primary" },
+                              { hex: dna.colors?.secondary, usage: "secondary" },
+                              { hex: dna.colors?.background, usage: "background" },
+                              { hex: dna.colors?.accent, usage: "accent" },
+                            ].filter(c => c.hex),
+                            typography: [
+                              { family: dna.typography?.headingFont, usage: "headings" },
+                              { family: dna.typography?.bodyFont, usage: "body" },
+                            ].filter(t => t.family),
+                            images: dna.images || [],
+                          },
+                        }),
+                      })
+                    );
+                  }
+
+                  await Promise.all(savePromises);
+                  localStorage.setItem("approvedBusinessId", businessId);
+                  router.push(`/chat?id=${businessId}`);
+                } catch (err) {
+                  console.error("Failed to save Knowledge Base:", err);
+                  alert("Failed to save. Please try again.");
+                }
               }}
-              className="bg-[#2563EB] text-white px-8 py-2.5 rounded-xl font-semibold text-[14px] hover:bg-[#1D4ED8] shadow-md transition-colors shadow-blue-500/20"
+              className="bg-[#2563EB] text-white px-8 py-2.5 rounded-xl font-semibold text-[14px] hover:bg-[#1D4ED8] shadow-md transition-colors shadow-blue-500/20 flex items-center gap-2"
             >
-              Looks Good
+              <Save className="w-4 h-4" />
+              Save
             </button>
           </div>
         </div>
