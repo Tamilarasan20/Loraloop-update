@@ -244,20 +244,29 @@ export default function ChatPage() {
           }];
         });
 
-        // Step 5: Generate brand-consistent image
-        let imageUrl = postData.heroImage || "";
-        try {
-          const imageRes = await fetch("/api/generate-media", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: postData.image_prompt, type: "image" }),
-            signal: abortController.signal,
-          });
-          const imageData = await imageRes.json();
-          if (imageData.mediaUrl) imageUrl = imageData.mediaUrl;
-        } catch (imgErr: any) {
-          if (imgErr.name === "AbortError") throw imgErr;
-          console.warn("Image generation failed, using brand image fallback:", imgErr);
+        // Step 5: Use brand image from KB or generate AI image as fallback
+        let imageUrl = "";
+        
+        if (postData.use_brand_image && postData.selected_brand_image) {
+          // PREFER scraped brand images from the knowledge base
+          imageUrl = postData.selected_brand_image;
+          console.log("[chat] Using scraped brand image:", imageUrl.slice(0, 80));
+        } else {
+          // FALLBACK: Generate AI image only when no brand images are available
+          try {
+            const imageRes = await fetch("/api/generate-media", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ prompt: postData.image_prompt, type: "image" }),
+              signal: abortController.signal,
+            });
+            const imageData = await imageRes.json();
+            if (imageData.mediaUrl) imageUrl = imageData.mediaUrl;
+          } catch (imgErr: any) {
+            if (imgErr.name === "AbortError") throw imgErr;
+            console.warn("Image generation failed, using brand image fallback:", imgErr);
+            imageUrl = postData.heroImage || (postData.brandImages || [])[0] || "";
+          }
         }
 
         // Build the full caption

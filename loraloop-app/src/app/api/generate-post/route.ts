@@ -40,6 +40,12 @@ export async function POST(req: Request) {
     const brandImages = guidelines.images || [];
     const heroImage = brandImages[0] || "";
 
+    // Knowledge Base documents (scraped + generated)
+    const businessProfile = business.business_profile || "";
+    const marketResearch = business.market_research || "";
+    const socialStrategy = business.social_strategy || "";
+    const products = enriched.products || enriched.keyProducts || [];
+
     const platform = mediaType || "Instagram image";
 
     // Build the complete brand context block (shared across steps)
@@ -81,10 +87,19 @@ Post Structures: ${(patterns.post_structures || []).join(" | ") || "N/A"}
 Winning Formats: ${(patterns.winning_formats || []).join(" | ") || "N/A"}
 
 === BUSINESS PROFILE (excerpt) ===
-${(business.business_profile || "").slice(0, 1500)}
+${(businessProfile || "").slice(0, 2000)}
+
+=== MARKET RESEARCH (excerpt) ===
+${(marketResearch || "").slice(0, 1000)}
 
 === SOCIAL STRATEGY (excerpt) ===
-${(business.social_strategy || "").slice(0, 1000)}`.trim();
+${(socialStrategy || "").slice(0, 1000)}
+
+=== AVAILABLE BRAND IMAGES (scraped from website) ===
+${brandImages.slice(0, 10).map((img: string, i: number) => `${i + 1}. ${img}`).join("\n") || "None"}
+
+=== PRODUCTS/SERVICES ===
+${Array.isArray(products) ? products.join(", ") : products || "N/A"}`.trim();
 
     // ─── STEP 1: Analyze campaign context ────────────────────────────────
     // ─── STEP 3: Generate draft image concept ────────────────────────────
@@ -208,6 +223,28 @@ CRITICAL: Return ONLY the JSON object. No other text.`;
       imagePrompt += ` Accent brand color: ${accentColor}.`;
     }
 
+    // ── BRAND IMAGE SELECTION ──
+    // Pick the best matching scraped brand image based on the campaign theme
+    let selectedBrandImage = heroImage;
+    let useBrandImage = false;
+    if (brandImages.length > 0) {
+      const theme = (parsed.campaign_analysis?.theme || prompt || "").toLowerCase();
+      const matchedImage = brandImages.find((img: string) => {
+        const lower = img.toLowerCase();
+        // Match product keywords from prompt against image URLs
+        const keywords = theme.split(/\s+/).filter((w: string) => w.length > 3);
+        return keywords.some((kw: string) => lower.includes(kw));
+      });
+      if (matchedImage) {
+        selectedBrandImage = matchedImage;
+        useBrandImage = true;
+      } else {
+        // Default to first brand image — always prefer real over generated
+        selectedBrandImage = brandImages[0];
+        useBrandImage = true;
+      }
+    }
+
     const response = {
       // Structured data for the frontend
       campaign_analysis: parsed.campaign_analysis || {},
@@ -224,10 +261,13 @@ CRITICAL: Return ONLY the JSON object. No other text.`;
       subtitle: parsed.subtitle || enriched.tagline || "",
       image_prompt: imagePrompt,
       consistency_score: parsed.consistency_score || 0,
+      // Brand image selection — frontend should prefer this over AI generation
+      use_brand_image: useBrandImage,
+      selected_brand_image: selectedBrandImage,
       // Brand metadata
       brandColors: { primary: primaryColor, accent: accentColor },
       brandName,
-      brandImages: brandImages.slice(0, 5),
+      brandImages: brandImages.slice(0, 10),
       heroImage,
       model_used: result.model,
     };

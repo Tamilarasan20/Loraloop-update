@@ -72,6 +72,23 @@ Banned Words: ${(voiceId.banned_words || []).join(", ")}
 === CONTENT PATTERNS (Lora & Kip's Memory) ===
 Hooks: ${(patterns.hooks || []).join(" | ")}
 Post Structures: ${(patterns.post_structures || []).join(" | ")}
+
+=== KNOWLEDGE BASE DOCUMENTS ===
+
+--- Business Profile ---
+${(business.business_profile || "").slice(0, 2000)}
+
+--- Market Research ---
+${(business.market_research || "").slice(0, 1500)}
+
+--- Social Strategy ---
+${(business.social_strategy || "").slice(0, 1500)}
+
+=== AVAILABLE BRAND IMAGES (scraped from website) ===
+${(guidelines.images || []).slice(0, 10).map((img: string, i: number) => `${i + 1}. ${img}`).join("\n") || "None available"}
+
+=== PRODUCTS/SERVICES ===
+${Array.isArray(enriched.products) ? enriched.products.join(", ") : (enriched.keyProducts || "N/A")}
 `.trim();
 
     const fullPrompt = `You are ${agent.name}, the ${agent.role} for ${business.business_name}. Your responsibility is: ${agent.responsibility}.
