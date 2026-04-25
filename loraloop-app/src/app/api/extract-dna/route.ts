@@ -21,16 +21,30 @@ function isUsefulImage(src: string): boolean {
   // Must be a clean single URL (no unencoded spaces)
   if (src.includes(" ")) return false;
   const lower = src.toLowerCase();
+
+  // Tracking pixels & analytics
   const junk = [
     "pixel", "track", "analytics", "beacon", "1x1", "spacer",
     "facebook.com/tr", "google-analytics", "doubleclick",
     "googletagmanager", "hotjar", ".gif", "data:image/gif",
     "data:image/svg+xml", "gravatar", "wp-emoji",
-    "wpcf7", "spinner", "loading.gif", "placeholder",
+    "wpcf7", "spinner", "loading.gif",
   ];
   if (junk.some((j) => lower.includes(j))) return false;
+
+  // Placeholder image services
+  const placeholders = [
+    "placeholder.com", "via.placeholder.com", "placeimg.com",
+    "placekitten.com", "dummyimage.com", "loremflickr.com",
+    "lorempixel.com", "imagefor.me", "placeholder.pics",
+  ];
+  if (placeholders.some((p) => lower.includes(p))) return false;
+
+  // Generic CDN images (often watermarks, logos)
+  if (/\/(logo|watermark|badge|stamp|copyright|©)/i.test(lower)) return false;
   if (lower.endsWith(".ico") && !lower.includes("logo")) return false;
-  if (/\/(icon|favicon|sprite|arrow|chevron|check|star|dot|close|menu|hamburger)/i.test(lower)) return false;
+  if (/\/(icon|favicon|sprite|arrow|chevron|check|star|dot|close|menu|hamburger|button|btn)/i.test(lower)) return false;
+
   return true;
 }
 
@@ -63,16 +77,37 @@ async function autoScroll(page: Page) {
   await page.evaluate(async () => {
     await new Promise<void>((resolve) => {
       let totalHeight = 0;
-      const distance = 800;   // bigger jumps (was 400)
+      let previousHeight = 0;
+      let noNewImagesCount = 0;
+      const distance = 800;
+      const maxNoNewImages = 3; // Stop if no new images after 3 scrolls
+
       const timer = setInterval(() => {
+        const currentImgCount = document.querySelectorAll('img').length;
         window.scrollBy(0, distance);
         totalHeight += distance;
-        if (totalHeight >= document.body.scrollHeight || totalHeight > 5000) { // cap at 5k (was 8k)
+
+        // Check for infinite scroll pattern (new images keep appearing)
+        // If image count doesn't increase, might be at end
+        if (currentImgCount === previousHeight) {
+          noNewImagesCount++;
+        } else {
+          noNewImagesCount = 0;
+          previousHeight = currentImgCount;
+        }
+
+        // Stop conditions:
+        // 1. Reached actual end of DOM
+        // 2. Hit scrolling height limit
+        // 3. No new images detected (infinite scroll at end)
+        if (totalHeight >= document.body.scrollHeight ||
+            totalHeight > 8000 ||
+            noNewImagesCount >= maxNoNewImages) {
           clearInterval(timer);
           window.scrollTo(0, 0);
           resolve();
         }
-      }, 80); // faster interval (was 150ms)
+      }, 100);
     });
   });
 }
@@ -224,6 +259,31 @@ async function scrapePage(page: Page) {
         logoUrl = "__MANIFEST__:" + (manifest as HTMLLinkElement).href;
       }
     }
+
+    // ── SOCIAL MEDIA META TAGS — high-quality images ──
+    // Strategy 0.5: Open Graph & Twitter Cards
+    const socialImages: string[] = [];
+
+    // Open Graph images (og:image, og:image:secure_url with optional dimensions)
+    document.querySelectorAll('meta[property="og:image"], meta[property="og:image:secure_url"]')
+      .forEach((tag) => {
+        const url = (tag as HTMLMetaElement).content;
+        if (url && url.startsWith("http")) socialImages.push(url);
+      });
+
+    // Twitter Card images
+    document.querySelectorAll('meta[name^="twitter:image"]')
+      .forEach((tag) => {
+        const url = (tag as HTMLMetaElement).content;
+        if (url && url.startsWith("http")) socialImages.push(url);
+      });
+
+    // Pinterest Rich Pin images
+    document.querySelectorAll('meta[property="pinterest:media"]')
+      .forEach((tag) => {
+        const url = (tag as HTMLMetaElement).content;
+        if (url && url.startsWith("http")) socialImages.push(url);
+      });
 
     // ── IMAGES — aggressive multi-source capture ──
 
@@ -453,16 +513,100 @@ async function scrapePage(page: Page) {
       }
     }
 
+    // Add social media images at the front (highest quality usually)
+    const allImages = [...socialImages, ...images];
+    const dedupedImages = Array.from(new Set(allImages));
+
     return {
       colors: Array.from(colors).filter((c) => c.startsWith("#")).slice(0, 25),
       fonts: Array.from(fonts).slice(0, 8),
       logoUrl,
-      images: images.slice(0, 150),
+      images: dedupedImages.slice(0, 150),
       textSample,
       pageTitle: document.title,
       internalLinks: internalLinks.slice(0, 8),
     };
   });
+}
+
+// ────────────────────────────────────────────────────────────────
+// E-COMMERCE API DETECTION & SCRAPING
+// ────────────────────────────────────────────────────────────────
+
+async function scrapeEcommerceApis(origin: string): Promise<string[]> {
+  const images: string[] = [];
+
+  // Shopify product API
+  try {
+    const shopifyRes = await fetch(`${origin}/products.json?limit=250`, {
+      signal: AbortSignal.timeout(6000),
+      headers: { "User-Agent": "Mozilla/5.0 (compatible)" },
+    });
+    if (shopifyRes.ok) {
+      const data = await shopifyRes.json();
+      if (data.products) {
+        for (const product of data.products.slice(0, 50)) {
+          if (product.images) {
+            for (const img of product.images.slice(0, 3)) {
+              if (img.src && isUsefulImage(img.src)) images.push(img.src);
+            }
+          }
+        }
+        console.log(`[extract-dna] 🛍 Shopify API: +${images.length} images`);
+      }
+    }
+  } catch { /* not shopify */ }
+
+  // WooCommerce REST API
+  if (images.length < 100) {
+    try {
+      const wcRes = await fetch(`${origin}/wp-json/wc/v3/products?per_page=100&_fields=id,images`, {
+        signal: AbortSignal.timeout(6000),
+        headers: { "User-Agent": "Mozilla/5.0 (compatible)" },
+      });
+      if (wcRes.ok) {
+        const products = await wcRes.json();
+        if (Array.isArray(products)) {
+          for (const product of products.slice(0, 50)) {
+            if (product.images) {
+              for (const img of product.images.slice(0, 2)) {
+                if (img.src && isUsefulImage(img.src)) images.push(img.src);
+              }
+            }
+          }
+          console.log(`[extract-dna] 🔧 WooCommerce API: +${images.length} images`);
+        }
+      }
+    } catch { /* not woo */ }
+  }
+
+  // Magento REST API
+  if (images.length < 100) {
+    try {
+      const magentoRes = await fetch(
+        `${origin}/rest/V1/products?searchCriteria[pageSize]=100&fields=items[id,media_gallery_entries]`,
+        {
+          signal: AbortSignal.timeout(6000),
+          headers: { "User-Agent": "Mozilla/5.0 (compatible)" },
+        }
+      );
+      if (magentoRes.ok) {
+        const data = await magentoRes.json();
+        if (data.items) {
+          for (const product of data.items.slice(0, 50)) {
+            if (product.media_gallery_entries) {
+              for (const media of product.media_gallery_entries.slice(0, 2)) {
+                if (media.file && isUsefulImage(media.file)) images.push(media.file);
+              }
+            }
+          }
+          console.log(`[extract-dna] 🏗 Magento API: +${images.length} images`);
+        }
+      }
+    } catch { /* not magento */ }
+  }
+
+  return images;
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -491,16 +635,42 @@ async function clickCarousels(page: Page): Promise<void> {
     '[aria-label="Next"]', '[aria-label="Next slide"]', '[aria-label="next"]',
     'button[class*="next"]', '[class*="owl-next"]', '[class*="flickity-next"]',
   ];
+
   for (const sel of nextSelectors) {
     try {
       const btns = page.locator(sel);
       const count = await btns.count();
-      for (let b = 0; b < Math.min(count, 3); b++) {
+
+      for (let b = 0; b < Math.min(count, 5); b++) {
         const btn = btns.nth(b);
         if (await btn.isVisible({ timeout: 200 })) {
-          for (let i = 0; i < 4; i++) {
+          // Click until button is disabled (not aria-disabled or disabled attribute)
+          let clicks = 0;
+          const maxClicks = 12; // increased from 4 to handle longer carousels
+
+          while (clicks < maxClicks) {
+            const isDisabled = await btn.evaluate((el: Element) => {
+              return (el as HTMLButtonElement).disabled ||
+                     el.getAttribute('aria-disabled') === 'true' ||
+                     el.classList.contains('disabled');
+            });
+
+            if (isDisabled) break;
+
             await btn.click({ timeout: 300 });
             await page.waitForTimeout(200);
+            clicks++;
+          }
+
+          // Also try keyboard navigation (arrow keys) for some carousels
+          if (clicks < 3) {
+            try {
+              await btn.focus();
+              for (let k = 0; k < 3; k++) {
+                await page.keyboard.press('ArrowRight');
+                await page.waitForTimeout(200);
+              }
+            } catch { /* keyboard nav not supported */ }
           }
         }
       }
@@ -674,17 +844,18 @@ export async function POST(req: Request) {
         }
       };
 
-      // ── CRAWL NAV PAGES + PARSE CSS + FETCH SITEMAP — all in parallel ──
+      // ── CRAWL NAV PAGES + PARSE CSS + FETCH SITEMAP + E-COMMERCE APIs — all in parallel ──
       const internalLinks = mainData.internalLinks.slice(0, 4);
       const origin = new URL(url).origin;
       if (internalLinks.length > 0) {
         console.log(`[extract-dna] 🔗 Crawling ${internalLinks.length} sub-pages in parallel...`);
       }
 
-      const [subResults, cssImages, sitemapUrls] = await Promise.all([
+      const [subResults, cssImages, sitemapUrls, ecommerceImages] = await Promise.all([
         Promise.allSettled(internalLinks.map(scrapeSubPage)),
         fetchExternalCssImages(page).catch(() => [] as string[]),
         fetchSitemapUrls(origin).catch(() => [] as string[]),
+        scrapeEcommerceApis(origin).catch(() => [] as string[]),
       ]);
 
       // Merge sub-page results
@@ -705,6 +876,11 @@ export async function POST(req: Request) {
         if (!extractedImages.includes(img)) extractedImages.push(img);
       }
       if (cssImages.length > 0) console.log(`[extract-dna] 🎨 CSS: +${cssImages.length} images`);
+
+      // Merge e-commerce API images
+      for (const img of ecommerceImages) {
+        if (!extractedImages.includes(img)) extractedImages.push(img);
+      }
 
       // Crawl top sitemap product/gallery pages not already visited
       if (sitemapUrls.length > 0) {
