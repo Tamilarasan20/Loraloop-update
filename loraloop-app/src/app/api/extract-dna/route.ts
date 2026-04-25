@@ -637,7 +637,7 @@ export async function POST(req: Request) {
     console.log("[extract-dna] 🚀 Starting deep extraction for:", url);
 
     // ══════════════════════════════════════════════════════════
-    // PHASE 1 — DEEP PLAYWRIGHT SCRAPE
+    // PHASE 1 — DEEP PLAYWRIGHT SCRAPE + 5 ADVANCED STRATEGIES
     // ══════════════════════════════════════════════════════════
     let textSample = "";
     let extractedColors: string[] = [];
@@ -645,6 +645,17 @@ export async function POST(req: Request) {
     let extractedLogo = "";
     let extractedImages: string[] = [];
     let pageTitle = "";
+
+    // Track images found per strategy for logging
+    const strategyStats = {
+      network: 0,
+      dom: 0,
+      sitemap: 0,
+      carousel: 0,
+      css: 0,
+      xhr: 0,
+      subPages: 0,
+    };
 
     try {
       browser = await chromium.launch({
@@ -663,24 +674,156 @@ export async function POST(req: Request) {
         bypassCSP: true,
       });
 
-      // Block heavy resources we don't need (we only want URLs, not file contents)
+      // Block heavy resources we don't need
       await context.route("**/*.{mp4,webm,ogg,mp3,wav,flac,woff2,woff,ttf,eot,pdf,zip}", (route) => route.abort());
 
       const page = await context.newPage();
 
-      // Navigate to main page — domcontentloaded is fast enough
+      // ════════════════════════════════════════════
+      // STRATEGY A: NETWORK INTERCEPTION (captures ALL image requests)
+      // ════════════════════════════════════════════
+      const networkImages = new Set<string>();
+      const xhrImages = new Set<string>();
+
+      page.on("response", async (response) => {
+        try {
+          const resUrl = response.url();
+          const contentType = response.headers()["content-type"] || "";
+          const status = response.status();
+
+          // Strategy A1: Direct image responses
+          if (status === 200 && contentType.startsWith("image/")) {
+            if (isUsefulImage(resUrl) && !networkImages.has(resUrl)) {
+              networkImages.add(resUrl);
+            }
+          }
+
+          // Strategy A2: XHR/Fetch API interception — JSON responses containing image URLs
+          if (status === 200 && (contentType.includes("application/json") || contentType.includes("text/json"))) {
+            try {
+              const body = await response.text();
+              // Extract image URLs from JSON strings
+              const imgMatches = body.match(/(https?:\/\/[^"'\s\\]+\.(?:jpg|jpeg|png|webp|avif))/gi) || [];
+              for (const imgUrl of imgMatches) {
+                const clean = imgUrl.replace(/\\/g, "");
+                if (isUsefulImage(clean) && !xhrImages.has(clean)) {
+                  xhrImages.add(clean);
+                }
+              }
+            } catch { /* not parseable — skip */ }
+          }
+        } catch { /* skip response errors */ }
+      });
+
+      // Navigate to main page
       console.log("[extract-dna] 📄 Loading main page...");
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
 
-      // Short networkidle wait — enough for JS to render, don't over-wait
-      try { await page.waitForLoadState("networkidle", { timeout: 4000 }); } catch { /* timeout ok */ }
+      // Short networkidle wait
+      try { await page.waitForLoadState("networkidle", { timeout: 5000 }); } catch { /* timeout ok */ }
 
       // Dismiss popups then scroll
       await dismissPopups(page);
       console.log("[extract-dna] 📜 Scrolling...");
       await autoScroll(page);
-      await page.waitForTimeout(300); // was 1500ms
+      await page.waitForTimeout(500);
 
+      // ════════════════════════════════════════════
+      // STRATEGY B: CAROUSEL/SLIDER CLICK AUTOMATION
+      // ════════════════════════════════════════════
+      console.log("[extract-dna] 🎠 Clicking carousels/sliders...");
+      const carouselBefore = networkImages.size;
+      try {
+        const carouselSelectors = [
+          // Next/arrow buttons
+          '[class*="next"]', '[class*="arrow-right"]', '[class*="slick-next"]',
+          '[class*="swiper-button-next"]', '[data-slide="next"]',
+          '[aria-label="Next"]', '[aria-label="next"]', '[aria-label="Next slide"]',
+          'button[class*="carousel"] + button', '.flickity-prev-next-button.next',
+          '[class*="glide__arrow--right"]', '[class*="owl-next"]',
+          // Dots/pagination
+          '[class*="slick-dots"] li:nth-child(2)', '[class*="swiper-pagination-bullet"]:nth-child(2)',
+          '[class*="carousel-indicators"] li:nth-child(2)',
+        ];
+
+        for (const sel of carouselSelectors) {
+          try {
+            const btn = page.locator(sel).first();
+            if (await btn.isVisible({ timeout: 200 })) {
+              // Click through up to 8 slides
+              for (let i = 0; i < 8; i++) {
+                try {
+                  await btn.click({ timeout: 500 });
+                  await page.waitForTimeout(400);
+                } catch { break; }
+              }
+            }
+          } catch { /* selector not found — expected */ }
+        }
+
+        // Also try Tab-based interaction on product galleries
+        try {
+          const thumbs = page.locator('[class*="thumbnail"], [class*="thumb"], [class*="product-image"], [class*="gallery-item"]');
+          const thumbCount = await thumbs.count();
+          for (let i = 0; i < Math.min(thumbCount, 10); i++) {
+            try {
+              await thumbs.nth(i).click({ timeout: 300 });
+              await page.waitForTimeout(300);
+            } catch { break; }
+          }
+        } catch { /* no thumbnails */ }
+      } catch (err) {
+        console.warn("[extract-dna] ⚠ Carousel automation error:", err);
+      }
+      strategyStats.carousel = networkImages.size - carouselBefore;
+      console.log(`[extract-dna] 🎠 Carousel clicks revealed ${strategyStats.carousel} new images`);
+
+      // Wait for any lazy images triggered by carousel
+      await page.waitForTimeout(500);
+
+      // ════════════════════════════════════════════
+      // STRATEGY C: EXTERNAL CSS STYLESHEET PARSING
+      // ════════════════════════════════════════════
+      console.log("[extract-dna] 🎨 Parsing external CSS stylesheets...");
+      const cssImages = new Set<string>();
+      try {
+        // Get all stylesheet URLs
+        const stylesheetUrls = await page.evaluate(() => {
+          const links: string[] = [];
+          document.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
+            const href = (link as HTMLLinkElement).href;
+            if (href && href.startsWith("http")) links.push(href);
+          });
+          return links;
+        });
+
+        // Fetch and parse each CSS file for background-image URLs
+        const cssPromises = stylesheetUrls.slice(0, 10).map(async (cssUrl) => {
+          try {
+            const cssPage = await context.newPage();
+            const resp = await cssPage.goto(cssUrl, { timeout: 5000 });
+            const cssText = await resp?.text() || "";
+            await cssPage.close();
+
+            // Extract all url() from CSS
+            const urlMatches = cssText.matchAll(/url\(["']?((?:https?:\/\/|\/)[^"')]+\.(jpg|jpeg|png|webp|avif))["']?\)/gi);
+            for (const m of urlMatches) {
+              let imgUrl = m[1];
+              if (imgUrl.startsWith("/")) {
+                try { imgUrl = new URL(imgUrl, url).href; } catch { continue; }
+              }
+              if (isUsefulImage(imgUrl)) cssImages.add(imgUrl);
+            }
+          } catch { /* skip failed CSS */ }
+        });
+        await Promise.allSettled(cssPromises);
+      } catch (err) {
+        console.warn("[extract-dna] ⚠ CSS parsing error:", err);
+      }
+      strategyStats.css = cssImages.size;
+      console.log(`[extract-dna] 🎨 CSS stylesheets: ${cssImages.size} images found`);
+
+      // ── DOM SCRAPE (existing 15-strategy function) ──
       const mainData = await scrapePage(page);
 
       extractedColors = mainData.colors;
@@ -689,20 +832,133 @@ export async function POST(req: Request) {
       extractedImages = [...mainData.images];
       textSample = mainData.textSample;
       pageTitle = mainData.pageTitle;
+      strategyStats.dom = mainData.images.length;
 
-      console.log(`[extract-dna] ✅ Main page: ${extractedImages.length} images, ${extractedColors.length} colors`);
+      console.log(`[extract-dna] ✅ Main page DOM: ${extractedImages.length} images, ${extractedColors.length} colors`);
 
-      // ── CRAWL LEVEL 2 PAGES IN PARALLEL ──
-      // Scrape up to 5 priority Level 2 pages (Features, Pricing, About, Blog, etc.)
-      const internalLinks = mainData.internalLinks.slice(0, 10);
-      if (internalLinks.length > 0) {
-        console.log(`[extract-dna] 🔗 Crawling ${internalLinks.length} sub-pages in parallel...`);
+      // Merge network-intercepted images
+      for (const img of networkImages) {
+        if (!extractedImages.includes(img)) extractedImages.push(img);
+      }
+      strategyStats.network = networkImages.size;
+      console.log(`[extract-dna] 🌐 Network interception: ${networkImages.size} images captured`);
+
+      // Merge XHR/API images
+      for (const img of xhrImages) {
+        if (!extractedImages.includes(img)) extractedImages.push(img);
+      }
+      strategyStats.xhr = xhrImages.size;
+      console.log(`[extract-dna] 📡 XHR/API interception: ${xhrImages.size} images captured`);
+
+      // Merge CSS images
+      for (const img of cssImages) {
+        if (!extractedImages.includes(img)) extractedImages.push(img);
+      }
+
+      // ════════════════════════════════════════════
+      // STRATEGY D: SITEMAP.XML CRAWLING
+      // ════════════════════════════════════════════
+      console.log("[extract-dna] 🗺️ Attempting sitemap.xml crawl...");
+      let sitemapLinks: string[] = [];
+      try {
+        const sitemapUrls = [
+          new URL("/sitemap.xml", url).href,
+          new URL("/sitemap_index.xml", url).href,
+          new URL("/wp-sitemap.xml", url).href,
+          new URL("/sitemap-index.xml", url).href,
+        ];
+
+        for (const smUrl of sitemapUrls) {
+          try {
+            const smResp = await fetch(smUrl, {
+              headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/xml,text/xml" },
+              signal: AbortSignal.timeout(5000),
+            });
+            if (!smResp.ok) continue;
+            const smText = await smResp.text();
+            if (!smText.includes("<url") && !smText.includes("<sitemap")) continue;
+
+            // Extract <loc> URLs
+            const locMatches = smText.matchAll(/<loc>\s*(.*?)\s*<\/loc>/gi);
+            const smSkip = ["login", "signin", "account", "privacy", "terms", "cookie", "legal", "cart", "checkout", "wp-admin", "feed"];
+            const smPriority = ["product", "shop", "collection", "gallery", "about", "feature", "portfolio", "service", "brand"];
+            
+            const priorityLinks: string[] = [];
+            const otherLinks: string[] = [];
+            
+            for (const lm of locMatches) {
+              const locUrl = lm[1].trim();
+              const lower = locUrl.toLowerCase();
+              // Skip non-page URLs
+              if (smSkip.some(s => lower.includes(s))) continue;
+              if (lower.endsWith(".pdf") || lower.endsWith(".zip") || lower.endsWith(".xml")) continue;
+              // Already crawled?
+              if (extractedImages.some(img => img.includes(locUrl))) continue;
+              
+              if (smPriority.some(p => lower.includes(p))) {
+                priorityLinks.push(locUrl);
+              } else {
+                otherLinks.push(locUrl);
+              }
+            }
+            
+            // If this was a sitemap index, recursively get child sitemaps
+            if (smText.includes("<sitemap")) {
+              console.log("[extract-dna] 🗺️ Found sitemap index, parsing child sitemaps...");
+              const childSitemaps = smText.match(/<loc>\s*(.*?)\s*<\/loc>/gi) || [];
+              for (const childLoc of childSitemaps.slice(0, 5)) {
+                const childUrl = childLoc.replace(/<\/?loc>/gi, "").trim();
+                try {
+                  const childResp = await fetch(childUrl, {
+                    headers: { "User-Agent": "Mozilla/5.0" },
+                    signal: AbortSignal.timeout(5000),
+                  });
+                  if (childResp.ok) {
+                    const childText = await childResp.text();
+                    const childLocs = childText.matchAll(/<loc>\s*(.*?)\s*<\/loc>/gi);
+                    for (const cl of childLocs) {
+                      const cUrl = cl[1].trim();
+                      const cLower = cUrl.toLowerCase();
+                      if (smSkip.some(s => cLower.includes(s))) continue;
+                      if (smPriority.some(p => cLower.includes(p))) {
+                        priorityLinks.push(cUrl);
+                      } else {
+                        otherLinks.push(cUrl);
+                      }
+                    }
+                  }
+                } catch { /* skip child */ }
+              }
+            }
+            
+            sitemapLinks = [...priorityLinks, ...otherLinks];
+            console.log(`[extract-dna] 🗺️ Sitemap: ${sitemapLinks.length} URLs found (${priorityLinks.length} priority)`);
+            break; // Found a working sitemap
+          } catch { /* try next sitemap URL */ }
+        }
+      } catch (err) {
+        console.warn("[extract-dna] ⚠ Sitemap crawl error:", err);
+      }
+
+      // ── CRAWL LEVEL 2 PAGES (DOM-discovered + sitemap-discovered) ──
+      // Combine DOM-discovered links with sitemap links, deduplicate
+      const domLinks = mainData.internalLinks.slice(0, 10);
+      const allCrawlLinks = new Set<string>([...domLinks]);
+      for (const sl of sitemapLinks) {
+        if (!allCrawlLinks.has(sl) && allCrawlLinks.size < 20) {
+          allCrawlLinks.add(sl);
+        }
+      }
+      const finalCrawlLinks = Array.from(allCrawlLinks);
+
+      if (finalCrawlLinks.length > 0) {
+        console.log(`[extract-dna] 🔗 Crawling ${finalCrawlLinks.length} sub-pages (${domLinks.length} DOM + ${finalCrawlLinks.length - domLinks.length} sitemap)...`);
 
         const scrapeSubPage = async (link: string) => {
           const subPage = await context.newPage();
           try {
             await subPage.goto(link, { waitUntil: "domcontentloaded", timeout: 10000 });
-            try { await subPage.waitForLoadState("networkidle", { timeout: 2500 }); } catch { /* ok */ }
+            try { await subPage.waitForLoadState("networkidle", { timeout: 3000 }); } catch { /* ok */ }
             await autoScroll(subPage);
             const subData = await scrapePage(subPage);
             console.log(`[extract-dna]   ✅ ${link} — +${subData.images.length} images`);
@@ -715,20 +971,28 @@ export async function POST(req: Request) {
           }
         };
 
-        // Run all sub-pages at the same time instead of one-by-one
-        const subResults = await Promise.allSettled(internalLinks.map(scrapeSubPage));
+        // Run in batches of 5 to avoid overwhelming the browser
+        const batches: string[][] = [];
+        for (let i = 0; i < finalCrawlLinks.length; i += 5) {
+          batches.push(finalCrawlLinks.slice(i, i + 5));
+        }
 
-        for (const result of subResults) {
-          if (result.status !== "fulfilled" || !result.value) continue;
-          const subData = result.value;
-          for (const img of subData.images) {
-            if (!extractedImages.includes(img)) extractedImages.push(img);
-          }
-          if (subData.textSample) textSample += " | " + subData.textSample;
-          for (const c of subData.colors) {
-            if (!extractedColors.includes(c)) extractedColors.push(c);
+        for (const batch of batches) {
+          const subResults = await Promise.allSettled(batch.map(scrapeSubPage));
+          for (const result of subResults) {
+            if (result.status !== "fulfilled" || !result.value) continue;
+            const subData = result.value;
+            strategyStats.subPages += subData.images.length;
+            for (const img of subData.images) {
+              if (!extractedImages.includes(img)) extractedImages.push(img);
+            }
+            if (subData.textSample) textSample += " | " + subData.textSample;
+            for (const c of subData.colors) {
+              if (!extractedColors.includes(c)) extractedColors.push(c);
+            }
           }
         }
+        strategyStats.sitemap = sitemapLinks.length;
       }
 
       // Handle manifest logo
@@ -747,6 +1011,19 @@ export async function POST(req: Request) {
           extractedLogo = "";
         }
       }
+
+      // ── STRATEGY SUMMARY LOG ──
+      console.log(`[extract-dna] ════════════════════════════════════`);
+      console.log(`[extract-dna] 📊 IMAGE STRATEGY BREAKDOWN:`);
+      console.log(`[extract-dna]   DOM scrape (15 strategies): ${strategyStats.dom}`);
+      console.log(`[extract-dna]   Network interception:       ${strategyStats.network}`);
+      console.log(`[extract-dna]   XHR/API interception:       ${strategyStats.xhr}`);
+      console.log(`[extract-dna]   Carousel automation:        ${strategyStats.carousel}`);
+      console.log(`[extract-dna]   CSS stylesheet parsing:     ${strategyStats.css}`);
+      console.log(`[extract-dna]   Sitemap URLs discovered:    ${strategyStats.sitemap}`);
+      console.log(`[extract-dna]   Sub-page crawl images:      ${strategyStats.subPages}`);
+      console.log(`[extract-dna]   TOTAL RAW (before dedup):   ${extractedImages.length}`);
+      console.log(`[extract-dna] ════════════════════════════════════`);
 
       await browser.close();
       browser = null;
