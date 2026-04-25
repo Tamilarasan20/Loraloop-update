@@ -92,9 +92,9 @@ export default function Sidebar() {
 
         {/* Lora Knowledge Base */}
         <Link
-           href={businessId ? `/board?id=${businessId}` : "/"}
+           href={businessId ? `/board?id=${businessId}` : "/knowledge-base"}
            className={`flex items-center gap-3.5 px-4 py-2.5 rounded-xl transition-colors font-semibold text-[14px] ${
-             pathname.startsWith("/board")
+             pathname.startsWith("/board") || pathname === "/knowledge-base"
                ? "bg-[#E0EEBA] text-[#111111]"
                : "text-[#3F3F46] hover:text-[#111111] hover:bg-[#F4F4F5]"
            }`}
