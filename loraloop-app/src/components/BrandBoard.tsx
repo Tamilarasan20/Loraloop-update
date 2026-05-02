@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Link, Upload, Pencil, X, Image as ImageIcon, Camera, RotateCcw, Dna } from "lucide-react";
+import { Link, Pencil, X, Image as ImageIcon, Camera, RotateCcw, Dna } from "lucide-react";
 import ColorPickerModal from "./ColorPickerModal";
 import FontPickerModal from "./FontPickerModal";
 import BusinessNameModal from "./BusinessNameModal";
@@ -44,6 +44,40 @@ export default function BrandBoard({ initialDna }: { initialDna: any }) {
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [deleteImageIndex, setDeleteImageIndex] = useState<number | null>(null);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+
+  // Scraper state
+  const [isScraperOpen, setIsScraperOpen] = useState(false);
+  const [scrapeUrl, setScrapeUrl] = useState("");
+  const [isScraping, setIsScraping] = useState(false);
+  const [scrapeResult, setScrapeResult] = useState<{ total: number; raw: number } | null>(null);
+  const [scrapeError, setScrapeError] = useState("");
+  const [showAllImages, setShowAllImages] = useState(false);
+
+  const handleScrapeImages = async () => {
+    if (!scrapeUrl.trim()) { setScrapeError("Please enter a URL."); return; }
+    setIsScraping(true); setScrapeError(""); setScrapeResult(null);
+    try {
+      const res = await fetch("/api/scrape-images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: scrapeUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) { setScrapeError(data.error || "Scrape failed"); return; }
+      // Merge new images with existing, deduplicate
+      const incoming: string[] = data.images || [];
+      setDna(prev => ({
+        ...prev,
+        images: [...new Set([...incoming, ...(prev.images || [])])].slice(0, 80),
+      }));
+      setScrapeResult({ total: data.total, raw: data.raw });
+      setShowAllImages(false);
+    } catch (err: any) {
+      setScrapeError(err.message || "Network error");
+    } finally {
+      setIsScraping(false);
+    }
+  };
   
   // Tags Modal State
   const [tagsModalConfig, setTagsModalConfig] = useState<{
@@ -306,40 +340,109 @@ export default function BrandBoard({ initialDna }: { initialDna: any }) {
 
         {/* ═══════ COLUMN 2: Images (Right Scrollable) ═══════ */}
         <div className="flex flex-col w-full lg:w-[480px] shrink-0 pr-2 relative overflow-y-auto scrollbar-thin pb-10">
-          <div className="text-[16px] font-bold text-[#111111] mb-5">Images</div>
-          
+          {/* Header */}
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              <div className="text-[16px] font-bold text-[#111111]">Images</div>
+              {(dna.images || []).length > 0 && (
+                <span className="text-[11px] font-bold bg-[#EAF5CE] text-[#7BA02D] px-2 py-0.5 rounded-full">
+                  {(dna.images || []).length}
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => setIsScraperOpen(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-bold transition-colors ${isScraperOpen ? 'bg-[#111] text-white' : 'bg-[#EAF5CE] text-[#7BA02D] hover:bg-[#dff2b0]'}`}
+            >
+              <Camera className="w-3.5 h-3.5" />
+              Scrape Website
+            </button>
+          </div>
+
+          {/* Scraper Panel */}
+          {isScraperOpen && (
+            <div className="mb-5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-[20px] p-5 flex flex-col gap-3">
+              <div className="text-[13px] font-bold text-[#111]">Scrape images from website</div>
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={scrapeUrl}
+                  onChange={e => setScrapeUrl(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleScrapeImages(); }}
+                  placeholder="https://example.com"
+                  className="flex-1 bg-white border border-[#E2E8F0] rounded-xl px-3 py-2 text-[13px] text-[#111] outline-none focus:ring-2 focus:ring-[#C4CE83] placeholder:text-[#A1A1AA]"
+                />
+                <button
+                  onClick={handleScrapeImages}
+                  disabled={isScraping}
+                  className="bg-[#111] text-white rounded-xl px-4 py-2 text-[12px] font-bold hover:bg-[#27272A] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5 whitespace-nowrap"
+                >
+                  {isScraping ? (
+                    <><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin inline-block" />Scraping...</>
+                  ) : (
+                    <><Camera className="w-3.5 h-3.5" />Scrape</>
+                  )}
+                </button>
+              </div>
+              {scrapeError && (
+                <div className="text-[12px] text-red-500 font-medium">{scrapeError}</div>
+              )}
+              {scrapeResult && (
+                <div className="text-[12px] text-[#7BA02D] font-bold">
+                  ✅ Found {scrapeResult.total} images ({scrapeResult.raw} raw candidates) — added to board
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Images Grid */}
           <div className="grid grid-cols-4 gap-4 flex-1 content-start auto-rows-max">
-            {/* Upload Button */}
-            <div className="bg-[#EAF5CE] text-[#7BA02D] rounded-[24px] aspect-square flex flex-col items-center justify-center cursor-pointer hover:bg-[#E0EEBA] transition-colors group/upload shadow-[inset_0_2px_4px_rgba(255,255,255,0.6)]">
-              <Upload className="w-5 h-5 mb-2 group-hover/upload:-translate-y-1 transition-transform" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-center leading-tight">Upload<br/>Images</span>
-            </div>
-            
             {/* Thumbnails */}
-            {(dna.images || []).slice(0, 15).map((img, i) => (
-              <div 
-                key={i} 
-                className="aspect-square bg-[#F4F4F5] rounded-[24px] overflow-hidden relative group/img cursor-pointer shadow-sm border border-[#E5E7EB]"
+            {(showAllImages ? (dna.images || []) : (dna.images || []).slice(0, 15)).map((img, i) => (
+              <div
+                key={i}
+                className="aspect-square bg-[#F4F4F5] rounded-[20px] overflow-hidden relative group/img cursor-pointer shadow-sm border border-[#E5E7EB]"
                 onClick={() => setLightboxImage(img)}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={img} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover/img:scale-105" />
-                
+                <img
+                  src={img}
+                  alt=""
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover/img:scale-105"
+                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
                 {/* Hover Delete Button */}
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-start justify-end p-2">
-                   <button 
-                     className="w-7 h-7 flex items-center justify-center rounded-full bg-white/90 text-[#111111] backdrop-blur hover:bg-white transition-colors"
-                     onClick={(e) => { e.stopPropagation(); setDeleteImageIndex(i); }}
-                   >
-                     <X className="w-3.5 h-3.5" />
-                   </button>
+                  <button
+                    className="w-7 h-7 flex items-center justify-center rounded-full bg-white/90 text-[#111111] backdrop-blur hover:bg-white transition-colors"
+                    onClick={(e) => { e.stopPropagation(); setDeleteImageIndex(i); }}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             ))}
-          </div>
 
+            {/* Show more / less toggle */}
+            {(dna.images || []).length > 15 && (
+              <button
+                onClick={() => setShowAllImages(v => !v)}
+                className="aspect-square bg-[#F4F4F5] border border-[#E5E7EB] rounded-[20px] flex flex-col items-center justify-center text-[#A1A1AA] hover:text-[#7BA02D] hover:bg-[#EAF5CE] transition-colors text-[10px] font-bold uppercase tracking-widest gap-1"
+              >
+                {showAllImages ? '▲ Less' : `+${(dna.images || []).length - 15} More`}
+              </button>
+            )}
+
+            {/* Empty state */}
+            {(dna.images || []).length === 0 && !isScraping && (
+              <div className="col-span-4 flex flex-col items-center justify-center py-10 text-[#A1A1AA] gap-3">
+                <Camera className="w-10 h-10 opacity-30" />
+                <div className="text-[13px] font-medium text-center">No images yet.<br/>Click "Scrape Website" to import brand images.</div>
+              </div>
+            )}
+          </div>
         </div>
+
       </div>
 
       {/* ── Modals ── */}
