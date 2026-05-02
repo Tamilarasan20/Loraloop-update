@@ -3,9 +3,10 @@
 import { Suspense, useEffect, useState, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import BrandBoard from "@/components/BrandBoard";
+import VisualAssetGallery from "@/components/VisualAssetGallery";
 import {
   Loader2, FileText, X, Pencil, Trash2, Save, Eye, ChevronRight,
-  BookOpen, BarChart2, Users, AlertTriangle, CheckCircle2, Sparkles, RefreshCw
+  BookOpen, BarChart2, Users, AlertTriangle, CheckCircle2, Sparkles, RefreshCw, Image as ImageIcon
 } from "lucide-react";
 
 // ─────────────────────────────────────────────
@@ -655,13 +656,14 @@ function BoardContent() {
         </div>
 
         {/* Tabs */}
-        <div className="flex items-center gap-2 mb-8 bg-white border border-[#E5E7EB] rounded-full p-1 shadow-sm">
-          {["All", "Documents", "Brand Guidelines"].map((tab) => (
+        <div className="flex items-center gap-2 mb-8 bg-white border border-[#E5E7EB] rounded-full p-1 shadow-sm flex-wrap">
+          {["All", "Documents", "Visual Assets", "Brand Guidelines"].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-6 py-2 rounded-full text-[14px] font-semibold transition-colors ${activeTab === tab ? 'bg-[#EEF2FF] text-[#2563EB]' : 'text-[#71717A] hover:bg-gray-50 hover:text-[#111111]'}`}
+              className={`px-5 py-2 rounded-full text-[14px] font-semibold transition-colors flex items-center gap-1.5 ${activeTab === tab ? 'bg-[#EEF2FF] text-[#2563EB]' : 'text-[#71717A] hover:bg-gray-50 hover:text-[#111111]'}`}
             >
+              {tab === "Visual Assets" && <ImageIcon className="w-3.5 h-3.5" />}
               {tab}
             </button>
           ))}
@@ -726,6 +728,32 @@ function BoardContent() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ── Visual Assets Block ── */}
+          {(activeTab === "All" || activeTab === "Visual Assets") && (
+            <div className="bg-white rounded-[24px] p-6 lg:p-8 w-full shadow-[0_2px_12px_rgba(0,0,0,0.03)] border border-[#F4F4F5] animate-in fade-in zoom-in-95 duration-300">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-[17px] font-bold text-[#111111]">Visual Assets</h2>
+                  <p className="text-[13px] text-[#A1A1AA] mt-0.5">Brand images stored in Supabase — hover to inspect, click to expand or download</p>
+                </div>
+                <div className="text-[12px] font-semibold text-[#7C3AED] bg-[#F5F3FF] px-3 py-1.5 rounded-full flex items-center gap-1.5">
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  {(dna?.images || []).length} assets
+                </div>
+              </div>
+              <VisualAssetGallery
+                images={dna?.images || []}
+                colors={[
+                  { name: 'Primary',    hex: dna?.colors?.primary    || '', usage: 'primary' },
+                  { name: 'Secondary',  hex: dna?.colors?.secondary  || '', usage: 'secondary' },
+                  { name: 'Background', hex: dna?.colors?.background || '', usage: 'background' },
+                  { name: 'Accent',     hex: dna?.colors?.accent     || '', usage: 'accent' },
+                ]}
+                brandName={dna?.brandName}
+              />
             </div>
           )}
 

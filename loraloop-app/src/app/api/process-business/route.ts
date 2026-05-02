@@ -1,163 +1,180 @@
 import { NextResponse } from 'next/server';
 import { localDb } from '@/lib/localDb';
+import fs from 'fs';
+import path from 'path';
 
-const mockSupabase = {
-  from: () => ({
-    insert: (arr: any[]) => ({ select: () => ({ single: async () => localDb.insert(arr[0]) }) }),
-    update: (obj: any) => ({ eq: async (field: string, val: string) => localDb.update(val, obj) })
-  })
-};
+const MAX_IMAGES = 25;
+const ASSETS_DIR = path.join(process.cwd(), 'public', 'brand-assets');
+
+// Download a remote image and save it to public/brand-assets/{businessId}/
+// Returns the public URL path on success, or null on failure.
+async function saveImageLocally(
+  businessId: string,
+  imageUrl: string,
+  index: number,
+): Promise<string | null> {
+  try {
+    const res = await fetch(imageUrl, {
+      signal: AbortSignal.timeout(10_000),
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Loraloop/1.0)' },
+    });
+    if (!res.ok) return null;
+
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.length < 1000) return null; // skip tiny images
+
+    const raw = res.headers.get('content-type') || 'image/jpeg';
+    const contentType = raw.split(';')[0].trim();
+    const extMap: Record<string, string> = {
+      'image/jpeg':   'jpg',
+      'image/jpg':    'jpg',
+      'image/png':    'png',
+      'image/webp':   'webp',
+      'image/gif':    'gif',
+      'image/svg+xml':'svg',
+      'image/avif':   'avif',
+    };
+    const ext = extMap[contentType] || 'jpg';
+
+    const dir = path.join(ASSETS_DIR, businessId);
+    fs.mkdirSync(dir, { recursive: true });
+
+    const filename = `${index}.${ext}`;
+    fs.writeFileSync(path.join(dir, filename), buffer);
+
+    // Return URL path relative to /public — Next.js serves these as static files
+    return `/brand-assets/${businessId}/${filename}`;
+  } catch {
+    return null;
+  }
+}
 
 export async function POST(req: Request) {
   try {
     const { url, businessName } = await req.json();
-    if (!url) {
-      return NextResponse.json({ error: 'URL is required' }, { status: 400 });
-    }
+    if (!url) return NextResponse.json({ error: 'URL is required' }, { status: 400 });
 
-    const supabase = mockSupabase;
     const normalizedUrl = url.startsWith('http') ? url : `https://${url}`;
     const hostName = businessName || new URL(normalizedUrl).hostname.replace('www.', '');
 
-    // Step 1: Insert the business row
-    const { data, error } = await supabase
-      .from('businesses')
-      .insert([
-        {
-          business_name: hostName,
-          website: normalizedUrl,
-          status: 'scraping',
-        }
-      ])
-      .select()
-      .single();
+    const { data, error } = localDb.insert({
+      business_name: hostName,
+      website: normalizedUrl,
+      status: 'scraping',
+      created_at: new Date().toISOString(),
+    });
 
-    if (error) {
-      console.error("Insert error", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error || !data) {
+      return NextResponse.json({ error: (error as any)?.message || 'Insert failed' }, { status: 500 });
     }
 
     const businessId = data.id;
 
-    // Step 2: Kick off the pipeline asynchronously using the existing extract-dna route
-    // We call it internally via fetch to localhost
     const origin = req.headers.get('origin') || req.headers.get('host') || 'localhost:3000';
     const protocol = origin.includes('localhost') ? 'http' : 'https';
     const baseUrl = origin.startsWith('http') ? origin : `${protocol}://${origin}`;
 
-    // Fire and forget — don't await
-    runPipeline(baseUrl, normalizedUrl, businessId, supabase).catch((err) => {
-      console.error("[process-business] Pipeline error:", err);
+    // Fire and forget
+    runPipeline(baseUrl, normalizedUrl, businessId).catch((err) => {
+      console.error('[process-business] Pipeline error:', err);
     });
 
     return NextResponse.json({ success: true, businessId });
-    
   } catch (error: any) {
-    console.error("Internal API error", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
-async function runPipeline(baseUrl: string, websiteUrl: string, businessId: string, supabase: any) {
-  try {
-    // Call the existing extract-dna endpoint which does the heavy lifting
-    console.log(`[pipeline] Starting for ${websiteUrl} (business: ${businessId})`);
-    
-    await supabase.from('businesses').update({ status: 'scraping' }).eq('id', businessId);
+async function runPipeline(baseUrl: string, websiteUrl: string, businessId: string) {
+  const update = (fields: Record<string, unknown>) => localDb.update(businessId, fields);
 
-    const response = await fetch(`${baseUrl}/api/extract-dna`, {
+  try {
+    console.log(`[pipeline] Starting for ${websiteUrl} (${businessId})`);
+    update({ status: 'scraping' });
+
+    // ── Phase 1: Scrape + extract DNA ─────────────────────────────────────────
+    const dnaRes = await fetch(`${baseUrl}/api/extract-dna`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: websiteUrl }),
     });
+    if (!dnaRes.ok) throw new Error(`extract-dna returned ${dnaRes.status}`);
 
-    if (!response.ok) {
-      throw new Error(`extract-dna returned ${response.status}`);
+    const result = await dnaRes.json();
+    if (!result.dna) throw new Error('No DNA returned from extraction');
+
+    const dna   = result.dna;
+    const docs  = result.documents || {};
+
+    // ── Phase 2: Save images to local disk ────────────────────────────────────
+    update({ status: 'enriching' });
+
+    const rawImages: string[] = (dna.images || [])
+      .filter((u: unknown) => typeof u === 'string' && (u as string).startsWith('http'))
+      .slice(0, MAX_IMAGES);
+
+    const localImageUrls: string[] = [];
+    for (let i = 0; i < rawImages.length; i++) {
+      const localUrl = await saveImageLocally(businessId, rawImages[i], i);
+      if (localUrl) localImageUrls.push(localUrl);
     }
+    console.log(`[pipeline] Saved ${localImageUrls.length}/${rawImages.length} images locally`);
 
-    const result = await response.json();
-    
-    if (!result.dna) {
-      throw new Error('No DNA returned from extraction');
-    }
+    // ── Phase 3: Assemble and persist ─────────────────────────────────────────
+    update({ status: 'generating' });
 
-    // Update status to enriching
-    await supabase.from('businesses').update({ status: 'enriching' }).eq('id', businessId);
-
-    const dna = result.dna;
-    const docs = result.documents || {};
-
-    // Map the DNA to our schema
     const enrichedData = {
       businessOverview: dna.businessOverview || '',
-      brandValues: dna.brandValue ? dna.brandValue.split(',').map((v: string) => v.trim()) : [],
+      brandValues: dna.brandValue
+        ? dna.brandValue.split(',').map((v: string) => v.trim())
+        : [],
       brandAesthetic: dna.brandAesthetic || '',
-      brandTone: dna.toneOfVoice || '',
-      tagline: dna.tagline || '',
-      enrichedAt: new Date().toISOString(),
+      brandTone:      dna.toneOfVoice   || '',
+      tagline:        dna.tagline        || '',
+      enrichedAt:     new Date().toISOString(),
     };
 
     const brandGuidelines = {
       colors: [
-        { name: 'Primary', hex: dna.colors?.primary || '#333333', usage: 'primary' },
-        { name: 'Secondary', hex: dna.colors?.secondary || '#666666', usage: 'secondary' },
+        { name: 'Primary',    hex: dna.colors?.primary    || '#333333', usage: 'primary' },
+        { name: 'Secondary',  hex: dna.colors?.secondary  || '#666666', usage: 'secondary' },
         { name: 'Background', hex: dna.colors?.background || '#FFFFFF', usage: 'background' },
-        { name: 'Accent', hex: dna.colors?.accent || '#0066ff', usage: 'accent' },
+        { name: 'Accent',     hex: dna.colors?.accent     || '#0066ff', usage: 'accent' },
       ],
-      logos: dna.logoUrl ? [{ url: dna.logoUrl, type: 'primary', description: 'Main logo' }] : [],
+      logos: dna.logoUrl
+        ? [{ url: dna.logoUrl, type: 'primary', description: 'Main logo' }]
+        : [],
       typography: [
-        { family: dna.typography?.headingFont || 'Inter', usage: 'headings', weights: ['400', '700'] },
-        { family: dna.typography?.bodyFont || 'Inter', usage: 'body', weights: ['400', '500'] },
+        { family: dna.typography?.headingFont || 'Inter',      usage: 'headings', weights: ['400', '700'] },
+        { family: dna.typography?.bodyFont    || 'sans-serif', usage: 'body',     weights: ['400', '500'] },
       ],
-      images: dna.images || [],
+      // Use locally saved images; fall back to original URLs if download failed
+      images: localImageUrls.length > 0 ? localImageUrls : rawImages,
     };
 
-    const scrapedData = {
-      url: websiteUrl,
-      content: {
-        title: dna.brandName || '',
-        description: dna.businessOverview || '',
-        headings: [],
-        paragraphs: [],
+    update({
+      business_name:    dna.brandName    || 'Unknown',
+      scraped_data: {
+        url: websiteUrl,
+        content: { title: dna.brandName || '', description: dna.businessOverview || '' },
+        images: rawImages.map((url: string) => ({ url, alt: '' })),
       },
-      images: (dna.images || []).map((url: string) => ({ url, alt: '' })),
-      metadata: {},
-    };
-
-    // Update status to generating
-    await supabase.from('businesses').update({ status: 'generating' }).eq('id', businessId);
-
-    // Save everything
-    const { error: updateError } = await supabase
-      .from('businesses')
-      .update({
-        business_name: dna.brandName || 'Unknown',
-        scraped_data: scrapedData,
-        enriched_data: enrichedData,
-        brand_guidelines: brandGuidelines,
-        brand_memory: {
-          visual_identity: dna.visual_identity || {},
-          brand_voice: dna.brand_voice || {},
-          content_patterns: dna.content_patterns || {},
-        },
-        business_profile: docs.businessProfile || 'No business profile generated.',
-        market_research: docs.marketResearch || 'No market research generated.',
-        social_strategy: docs.strategy || 'No social strategy generated.',
-        status: 'completed',
-      })
-      .eq('id', businessId);
-
-    if (updateError) {
-      throw updateError;
-    }
+      enriched_data:    enrichedData,
+      brand_guidelines: brandGuidelines,
+      brand_memory: {
+        visual_identity:  dna.visual_identity  || {},
+        brand_voice:      dna.brand_voice      || {},
+        content_patterns: dna.content_patterns || {},
+      },
+      business_profile: docs.businessProfile || '',
+      market_research:  docs.marketResearch  || '',
+      social_strategy:  docs.strategy        || '',
+      status: 'completed',
+    });
 
     console.log(`[pipeline] ✅ Completed for ${dna.brandName} (${businessId})`);
-
   } catch (err: any) {
     console.error(`[pipeline] ❌ Failed:`, err.message);
-    await supabase
-      .from('businesses')
-      .update({ status: 'failed', error_message: err.message })
-      .eq('id', businessId);
+    localDb.update(businessId, { status: 'failed', error_message: err.message });
   }
 }
