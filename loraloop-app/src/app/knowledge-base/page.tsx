@@ -1,94 +1,83 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowRight, Globe, Loader2, Plus, Sparkles } from "lucide-react";
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
-export default function KnowledgeBasePage() {
-  const [businesses, setBusinesses] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function StartBrandKnowledgePage() {
+  const router = useRouter();
+  const [websiteUrl, setWebsiteUrl] = useState('');
+  const [isPending, setIsPending] = useState(false);
 
-  useEffect(() => {
-    fetch("/api/get-all-businesses")
-      .then(res => res.json())
-      .then(data => {
-        setBusinesses(data.businesses || []);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error("Failed to load knowledge base", err);
-        setLoading(false);
-      });
-  }, []);
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!websiteUrl.trim()) return;
+    setIsPending(true);
+    // Use the MVP's existing loading flow instead of the NestJS backend job
+    router.push(`/loading?url=${encodeURIComponent(websiteUrl.trim())}`);
+  };
 
   return (
-    <div className="min-h-screen bg-[#FAFBFC] p-10 pl-[280px]">
-      <div className="max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-10">
-          <div>
-            <h1 className="text-3xl font-bold text-[#111111] tracking-tight mb-2 flex items-center gap-2">
-              <Sparkles className="w-7 h-7 text-[#3B82F6]" />
-              Lora Knowledge Base
-            </h1>
-            <p className="text-[#71717A] text-[15px]">
-              Access previously analysed brands or extract new brand DNA.
-            </p>
+    <div className="min-h-[80vh] flex items-center justify-center px-6 bg-[#FAFBFC]">
+      <div className="w-full max-w-2xl">
+        <div className="text-center mb-10">
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#3B82F6] to-[#8B5CF6] text-white text-2xl mb-4">
+            ✨
           </div>
-          <Link
-            href="/"
-            className="flex items-center gap-2 bg-[#3B82F6] hover:bg-[#2563EB] text-white px-5 py-2.5 rounded-xl font-medium transition-colors shadow-sm shadow-blue-500/20"
-          >
-            <Plus className="w-5 h-5" />
-            New Extraction
-          </Link>
+          <h1 className="text-3xl font-semibold tracking-tight text-[#111111]">
+            Build your brand knowledge base
+          </h1>
+          <p className="mt-3 text-[#71717A]">
+            Drop a website URL and we&apos;ll research your brand — voice, audience,
+            competitors, visual identity, and more. You&apos;ll review everything
+            before it&apos;s saved.
+          </p>
         </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <Loader2 className="w-8 h-8 animate-spin text-[#3B82F6]" />
-          </div>
-        ) : businesses.length === 0 ? (
-          <div className="bg-white border border-[#E5E7EB] rounded-2xl p-16 text-center shadow-sm">
-            <Globe className="w-12 h-12 text-[#D4D4D8] mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-[#111111] mb-2">No Brands Found</h3>
-            <p className="text-[#71717A] mb-6">You haven't extracted any website DNA yet.</p>
-            <Link
-              href="/"
-              className="inline-flex items-center gap-2 bg-[#111111] hover:bg-[#27272A] text-white px-6 py-3 rounded-xl font-medium transition-colors"
+        <form onSubmit={onSubmit} className="bg-white rounded-2xl border border-[#E5E7EB] shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-6">
+          <label className="block text-sm font-medium text-[#111111] mb-2">
+            Your website
+          </label>
+          <div className="flex gap-3">
+            <input
+              type="text"
+              value={websiteUrl}
+              onChange={(e) => setWebsiteUrl(e.target.value)}
+              placeholder="https://yourbrand.com"
+              className="flex-1 rounded-xl border border-[#E5E7EB] px-4 py-3 text-[15px] focus:border-[#3B82F6] focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all placeholder:text-[#A1A1AA] text-[#111111]"
+              disabled={isPending}
+              autoFocus
+            />
+            <button
+              type="submit"
+              disabled={isPending || !websiteUrl.trim()}
+              className="rounded-xl bg-gradient-to-br from-[#3B82F6] to-[#6366F1] px-6 py-3 font-medium text-white shadow-sm hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50 transition-all"
             >
-              Get Started
-            </Link>
+              {isPending ? 'Starting…' : 'Generate'}
+            </button>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {businesses.map((b) => (
-              <Link key={b.id} href={`/chat?id=${b.id}`} className="group block">
-                <div className="bg-white border border-[#E5E7EB] hover:border-[#3B82F6]/50 rounded-2xl p-6 transition-all hover:shadow-[0_8px_30px_rgb(59,130,246,0.12)] hover:-translate-y-1 h-full flex flex-col relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#3B82F6] to-[#8B5CF6] opacity-0 group-hover:opacity-100 transition-opacity" />
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-lg">
-                      {b.business_name?.charAt(0) || <Globe className="w-5 h-5" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-[#111111] truncate">{b.business_name || "Unknown Brand"}</h3>
-                      <p className="text-[13px] text-[#A1A1AA] truncate">{b.website}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-auto pt-4 flex items-center justify-between border-t border-[#F4F4F5]">
-                    <span className="text-[12px] font-medium text-[#71717A] bg-[#F4F4F5] px-2.5 py-1 rounded-md">
-                      {new Date(b.created_at).toLocaleDateString()}
-                    </span>
-                    <div className="flex items-center text-[#3B82F6] text-[13px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0">
-                      Chat with Lora <ArrowRight className="w-4 h-4 ml-1" />
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
+
+          <p className="mt-4 text-xs text-[#A1A1AA]">
+            This usually takes a few minutes. You can leave this page — your
+            knowledge base will be ready when you come back.
+          </p>
+        </form>
+
+        <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm text-[#71717A]">
+          <Bullet icon="🌐" title="Crawl" body="Multi-page scrape of your site, blog, and key pages." />
+          <Bullet icon="🧠" title="Analyze" body="Gemini extracts brand DNA, voice, and audience." />
+          <Bullet icon="✅" title="Review" body="You edit and approve before anything is saved." />
+        </div>
       </div>
+    </div>
+  );
+}
+
+function Bullet({ icon, title, body }: { icon: string; title: string; body: string }) {
+  return (
+    <div className="rounded-xl border border-[#E5E7EB] bg-white p-4 shadow-sm">
+      <div className="text-2xl mb-2">{icon}</div>
+      <div className="font-medium text-[#111111]">{title}</div>
+      <div className="mt-1 text-[13px] leading-relaxed">{body}</div>
     </div>
   );
 }

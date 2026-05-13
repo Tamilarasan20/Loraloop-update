@@ -60,20 +60,20 @@ export default function PostComposer({
     const files = Array.from(e.target.files || []);
     if (files.length + images.length > 4) return; // Max 4 images
 
-    setImages((prev) => [...prev, ...files]);
+    setImages((prev: File[]) => [...prev, ...files]);
 
     files.forEach((file) => {
       const reader = new FileReader();
       reader.onload = (ev) => {
-        setImagePreviews((prev) => [...prev, ev.target?.result as string]);
+        setImagePreviews((prev: string[]) => [...prev, ev.target?.result as string]);
       };
       reader.readAsDataURL(file);
     });
   };
 
   const removeImage = (index: number) => {
-    setImages((prev) => prev.filter((_, i) => i !== index));
-    setImagePreviews((prev) => prev.filter((_, i) => i !== index));
+    setImages((prev: File[]) => prev.filter((_: File, i: number) => i !== index));
+    setImagePreviews((prev: string[]) => prev.filter((_: string, i: number) => i !== index));
   };
 
   const composerData: ComposerData = {
@@ -198,14 +198,14 @@ export default function PostComposer({
               <Smile className="w-5 h-5" />
             </button>
             <button
-              onClick={() => setContent((prev) => prev + " #")}
+              onClick={() => setContent((prev: string) => prev + " #")}
               className="p-2.5 rounded-xl text-[#9A9A9C] hover:text-[#EAEAEA] hover:bg-white/5 transition-colors"
               title="Add hashtag"
             >
               <Hash className="w-5 h-5" />
             </button>
             <button
-              onClick={() => setContent((prev) => prev + " @")}
+              onClick={() => setContent((prev: string) => prev + " @")}
               className="p-2.5 rounded-xl text-[#9A9A9C] hover:text-[#EAEAEA] hover:bg-white/5 transition-colors"
               title="Mention"
             >

@@ -211,6 +211,8 @@ export interface GeminiCallOptions {
    * Waits backoff[attempt] ms before each retry.
    */
   maxRetries?: number;
+  agentName?: string;
+  costTier?: string;
 }
 
 export interface GeminiResult {
@@ -302,4 +304,12 @@ export async function callGemini(options: GeminiCallOptions): Promise<GeminiResu
   const error = new Error(userMsg) as Error & { detail: string };
   error.detail = lastError.slice(0, 400);
   throw error;
+}
+
+export async function generateGeminiImage(prompt: string): Promise<string> {
+  throw new Error("Not implemented");
+}
+
+export async function generateGeminiVideo(prompt: string): Promise<string> {
+  throw new Error("Not implemented");
 }
