@@ -116,9 +116,6 @@ export async function POST(req: Request) {
     }
     await page.waitForTimeout(400);
 
-    // ── Capture Full Page Screenshot for Brand DNA Analysis ──
-    const screenshotBuffer = await page.screenshot({ fullPage: true, type: "jpeg", quality: 60 });
-
     // DOM extraction — images, colors, and fonts
     const domExtracted: any = await page.evaluate((baseUrl) => {
       const seen = new Set<string>();
@@ -272,11 +269,6 @@ export async function POST(req: Request) {
     const topCandidates = finalImages.slice(0, 24);
     const inlineImages: { inlineData: { data: string; mimeType: string } }[] = [];
     const validUrls: string[] = [];
-    
-    // Add full page screenshot as the FIRST image for context
-    inlineImages.push({
-      inlineData: { data: screenshotBuffer.toString("base64"), mimeType: "image/jpeg" }
-    });
 
     await Promise.all(topCandidates.map(async (u) => {
       try {
@@ -299,12 +291,12 @@ export async function POST(req: Request) {
       fonts: siteFonts
     };
     
-    if (inlineImages.length > 1) {
-      console.log(`[scrape-images] 🤖 Passing screenshot + ${inlineImages.length - 1} images to Gemini Vision...`);
-      const promptText = `Analyze this brand's website. The first image is a full-page screenshot of the website. The following images are individual assets extracted from the site.
+    if (inlineImages.length > 0) {
+      console.log(`[scrape-images] 🤖 Passing ${inlineImages.length} individual images to Gemini Vision...`);
+      const promptText = `Analyze these individual assets extracted from a brand's website.
       
-Here are the exact URLs for the individual assets in the same order (starting from Image 2):
-${validUrls.map((u, i) => `[Image ${i + 2}]: ${u}`).join("\n")}
+Here are their exact URLs in the same order:
+${validUrls.map((u, i) => `[Image ${i + 1}]: ${u}`).join("\n")}
 
 Extract the Brand DNA into this exact JSON structure:
 {
@@ -328,7 +320,7 @@ Extract the Brand DNA into this exact JSON structure:
 Rules:
 1. Return ONLY valid JSON, no markdown.
 2. For image categories, ONLY use the exact URLs provided in the list above. Every URL MUST be in exactly one category.
-3. For colors, rely on the screenshot context to find the true primary brand colors (e.g., button colors, header colors).
+3. For colors, rely on the provided images (e.g., logo colors, graphic colors) to determine the true primary brand colors. If you cannot determine them from the images, return empty arrays.
 4. Products = clear photos of products. Lifestyle = people/environments. LogosAndAssets = graphics. Junk = icons/pixels.`;
 
       try {
