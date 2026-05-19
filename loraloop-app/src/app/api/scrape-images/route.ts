@@ -99,7 +99,6 @@ export async function POST(req: Request) {
     });
     await page.waitForTimeout(600);
 
-    // Carousel click automation
     const carouselSelectors = [
       '[class*="next"]', '[class*="slick-next"]', '[class*="swiper-button-next"]',
       '[aria-label="Next"]', '[aria-label="Next slide"]', '[data-slide="next"]',
@@ -117,8 +116,11 @@ export async function POST(req: Request) {
     }
     await page.waitForTimeout(400);
 
-    // DOM extraction — all 15 strategies
-    const domImages: string[] = await page.evaluate((baseUrl) => {
+    // ── Capture Full Page Screenshot for Brand DNA Analysis ──
+    const screenshotBuffer = await page.screenshot({ fullPage: true, type: "jpeg", quality: 60 });
+
+    // DOM extraction — images, colors, and fonts
+    const domExtracted: any = await page.evaluate((baseUrl) => {
       const seen = new Set<string>();
       const imgs: string[] = [];
       const add = (src: string | null | undefined) => {
@@ -205,15 +207,50 @@ export async function POST(req: Request) {
         (t.match(/(https?:\/\/[^"'\s\\]+\.(jpg|jpeg|png|webp|avif))/gi)||[]).slice(0,30).forEach(add);
       });
 
-      // Full attribute scan
-      Array.from(document.querySelectorAll("*")).slice(0,3000).forEach(el => {
-        Array.from((el as Element).attributes).forEach(attr => {
-          if (attr.value && attr.value.startsWith("http") && /\.(jpg|jpeg|png|webp|avif)([\?&]|$)/i.test(attr.value)) add(attr.value);
-        });
+      // Extract CSS Colors and Fonts
+      const colorCounts: Record<string, number> = {};
+      const fontCounts: Record<string, number> = {};
+      
+      const rgbToHex = (rgb: string) => {
+        const m = rgb.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        if (!m) return rgb;
+        return "#" + m.slice(1).map(n => parseInt(n).toString(16).padStart(2, '0')).join('');
+      };
+
+      document.querySelectorAll("h1, h2, h3, p, a, button, div, section, header, footer").forEach(el => {
+        try {
+          const cs = window.getComputedStyle(el as Element);
+          
+          // Fonts
+          const ff = cs.fontFamily;
+          if (ff && ff !== 'system-ui' && ff !== 'sans-serif') {
+            const primaryFont = ff.split(',')[0].replace(/['"]/g, '').trim();
+            if (primaryFont) fontCounts[primaryFont] = (fontCounts[primaryFont] || 0) + 1;
+          }
+          
+          // Colors
+          const bg = cs.backgroundColor;
+          const fg = cs.color;
+          if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+            const hex = rgbToHex(bg);
+            colorCounts[hex] = (colorCounts[hex] || 0) + 1;
+          }
+          if (fg && fg !== 'rgba(0, 0, 0, 0)' && fg !== 'transparent') {
+            const hex = rgbToHex(fg);
+            colorCounts[hex] = (colorCounts[hex] || 0) + 1;
+          }
+        } catch {}
       });
 
-      return imgs;
+      const topFonts = Object.entries(fontCounts).sort((a,b) => b[1] - a[1]).slice(0,3).map(x => x[0]);
+      const topColors = Object.entries(colorCounts).sort((a,b) => b[1] - a[1]).slice(0,6).map(x => x[0]);
+
+      return { imgs, topFonts, topColors };
     }, url);
+
+    const domImages = domExtracted.imgs;
+    const siteFonts = domExtracted.topFonts;
+    const siteColors = domExtracted.topColors;
 
     await browser.close();
     browser = null;
@@ -235,6 +272,11 @@ export async function POST(req: Request) {
     const topCandidates = finalImages.slice(0, 24);
     const inlineImages: { inlineData: { data: string; mimeType: string } }[] = [];
     const validUrls: string[] = [];
+    
+    // Add full page screenshot as the FIRST image for context
+    inlineImages.push({
+      inlineData: { data: screenshotBuffer.toString("base64"), mimeType: "image/jpeg" }
+    });
 
     await Promise.all(topCandidates.map(async (u) => {
       try {
@@ -251,32 +293,43 @@ export async function POST(req: Request) {
       } catch { /* skip */ }
     }));
 
-    let categorized: Record<string, string[]> = { products: [], lifestyle: [], logosAndAssets: [], junk: [] };
+    let dnaResult: any = { 
+      images: { products: [], lifestyle: [], logosAndAssets: [], junk: [] },
+      colors: siteColors,
+      fonts: siteFonts
+    };
     
-    if (inlineImages.length > 0) {
-      console.log(`[scrape-images] 🤖 Passing ${inlineImages.length} images to Gemini Vision...`);
-      const promptText = `Analyze these ${inlineImages.length} images from a brand's website.
-Here are their exact URLs in the same order:
-${validUrls.map((u, i) => `[Image ${i + 1}]: ${u}`).join("\n")}
+    if (inlineImages.length > 1) {
+      console.log(`[scrape-images] 🤖 Passing screenshot + ${inlineImages.length - 1} images to Gemini Vision...`);
+      const promptText = `Analyze this brand's website. The first image is a full-page screenshot of the website. The following images are individual assets extracted from the site.
+      
+Here are the exact URLs for the individual assets in the same order (starting from Image 2):
+${validUrls.map((u, i) => `[Image ${i + 2}]: ${u}`).join("\n")}
 
-Categorize the URLs into this exact JSON structure:
+Extract the Brand DNA into this exact JSON structure:
 {
-  "products": ["url1"],
-  "lifestyle": ["url2"],
-  "logosAndAssets": ["url3"],
-  "junk": ["url4"]
+  "brandColors": {
+    "primary": ["hex code"],
+    "secondary": ["hex codes"]
+  },
+  "fonts": {
+    "headings": "font name",
+    "body": "font name"
+  },
+  "logoUrl": "exact url of the best logo from the assets",
+  "images": {
+    "products": ["url1"],
+    "lifestyle": ["url2"],
+    "logosAndAssets": ["url3"],
+    "junk": ["url4"]
+  }
 }
-
-Categories:
-- products: Clear photos of products being sold (e.g. clothing, software screenshots, objects).
-- lifestyle: Photos of people, environments, or products in use.
-- logosAndAssets: Logos, brand marks, or prominent brand graphics.
-- junk: Icons, low quality images, tracking pixels, pure text banners, or unrelated graphics.
 
 Rules:
 1. Return ONLY valid JSON, no markdown.
-2. ONLY use the exact URLs provided above.
-3. Every URL MUST be in exactly one category.`;
+2. For image categories, ONLY use the exact URLs provided in the list above. Every URL MUST be in exactly one category.
+3. For colors, rely on the screenshot context to find the true primary brand colors (e.g., button colors, header colors).
+4. Products = clear photos of products. Lifestyle = people/environments. LogosAndAssets = graphics. Junk = icons/pixels.`;
 
       try {
         const aiResult = await callGemini({
@@ -286,13 +339,15 @@ Rules:
           mimeType: "application/json",
           maxRetries: 1
         });
-        categorized = JSON.parse(aiResult.text);
+        dnaResult = JSON.parse(aiResult.text);
       } catch (err: any) {
         console.error("[scrape-images] ⚠ AI categorization failed:", err.message);
-        categorized.products = validUrls;
+        dnaResult.images.products = validUrls;
       }
     }
 
+    const categorized = dnaResult.images || {};
+    
     // Filter out junk, keep the rest
     const qualityImagesSet = new Set([
       ...(categorized.products || []),
@@ -310,22 +365,36 @@ Rules:
     const qualityImages = Array.from(qualityImagesSet);
     console.log(`[scrape-images] 🎯 Final quality images: ${qualityImages.length} (Filtered ${categorized.junk?.length || 0} junk)`);
 
-    // Optionally save to knowledge base
+    // Merge AI extracted colors with DOM extracted colors if missing
+    const brandColors = dnaResult.brandColors?.primary?.length ? dnaResult.brandColors : { primary: siteColors.slice(0, 2), secondary: siteColors.slice(2, 6) };
+    const fonts = dnaResult.fonts || { headings: siteFonts[0], body: siteFonts[1] || siteFonts[0] };
+    const logoUrl = dnaResult.logoUrl || null;
+
+    // Save to knowledge base
     if (businessId) {
       const business = localDb.get(businessId);
       if (business) {
         const existing = business.brand_guidelines?.images || [];
         const merged = [...new Set([...qualityImages, ...existing])].slice(0, 80);
         localDb.update(businessId, {
-          brand_guidelines: { ...(business.brand_guidelines || {}), images: merged }
+          brand_guidelines: { 
+            ...(business.brand_guidelines || {}), 
+            images: merged,
+            colors: brandColors,
+            fonts: fonts,
+            logo: logoUrl || business.brand_guidelines?.logo
+          }
         });
-        console.log(`[scrape-images] 💾 Saved ${merged.length} images to KB for ${business.business_name}`);
+        console.log(`[scrape-images] 💾 Saved Brand DNA (colors, fonts, ${merged.length} images) to KB for ${business.business_name}`);
       }
     }
 
     return NextResponse.json({
       images: qualityImages,
       categories: categorized,
+      brandColors,
+      fonts,
+      logoUrl,
       total: qualityImages.length,
       raw: allImages.size,
     });
