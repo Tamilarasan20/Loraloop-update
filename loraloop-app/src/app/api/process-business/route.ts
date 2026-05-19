@@ -106,10 +106,28 @@ async function runPipeline(baseUrl: string, websiteUrl: string, businessId: stri
     const dna   = result.dna;
     const docs  = result.documents || {};
 
+    // ── Phase 1.5: Pomelli-Style Visual DNA ───────────────────────────────────
+    update({ status: 'scraping' }); // keep scraping status for images
+    let visualDna: any = null;
+    try {
+      console.log(`[pipeline] Fetching visual DNA for ${websiteUrl}...`);
+      const imgRes = await fetch(`${baseUrl}/api/scrape-images`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: websiteUrl, businessId }),
+      });
+      if (imgRes.ok) {
+        visualDna = await imgRes.json();
+        console.log(`[pipeline] ✅ Visual DNA loaded: ${visualDna.images?.length || 0} images`);
+      }
+    } catch (e) {
+      console.warn("[pipeline] ⚠ Visual DNA scraping failed:", e);
+    }
+
     // ── Phase 2: Save images to local disk ────────────────────────────────────
     update({ status: 'enriching' });
 
-    const rawImages: string[] = (dna.images || [])
+    const rawImages: string[] = (visualDna?.images || dna.images || [])
       .filter((u: unknown) => typeof u === 'string' && (u as string).startsWith('http'))
       .slice(0, MAX_IMAGES);
 
@@ -135,21 +153,30 @@ async function runPipeline(baseUrl: string, websiteUrl: string, businessId: stri
     };
 
     const brandGuidelines = {
-      colors: [
+      colors: visualDna?.brandColors ? [
+        { name: 'Primary',    hex: visualDna.brandColors.primary?.[0]   || dna.colors?.primary || '#333333', usage: 'primary' },
+        { name: 'Secondary',  hex: visualDna.brandColors.secondary?.[0] || dna.colors?.secondary || '#666666', usage: 'secondary' },
+        { name: 'Background', hex: visualDna.brandColors.primary?.[1]   || dna.colors?.background || '#FFFFFF', usage: 'background' },
+        { name: 'Accent',     hex: visualDna.brandColors.secondary?.[1] || dna.colors?.accent || '#0066ff', usage: 'accent' },
+      ] : [
         { name: 'Primary',    hex: dna.colors?.primary    || '#333333', usage: 'primary' },
         { name: 'Secondary',  hex: dna.colors?.secondary  || '#666666', usage: 'secondary' },
         { name: 'Background', hex: dna.colors?.background || '#FFFFFF', usage: 'background' },
         { name: 'Accent',     hex: dna.colors?.accent     || '#0066ff', usage: 'accent' },
       ],
-      logos: dna.logoUrl
-        ? [{ url: dna.logoUrl, type: 'primary', description: 'Main logo' }]
-        : [],
-      typography: [
+      logos: visualDna?.logoUrl 
+        ? [{ url: visualDna.logoUrl, type: 'primary', description: 'Main logo' }]
+        : (dna.logoUrl ? [{ url: dna.logoUrl, type: 'primary', description: 'Main logo' }] : []),
+      typography: visualDna?.fonts ? [
+        { family: visualDna.fonts.headings || 'Inter', usage: 'headings', weights: ['400', '700'] },
+        { family: visualDna.fonts.body || 'sans-serif', usage: 'body', weights: ['400', '500'] },
+      ] : [
         { family: dna.typography?.headingFont || 'Inter',      usage: 'headings', weights: ['400', '700'] },
         { family: dna.typography?.bodyFont    || 'sans-serif', usage: 'body',     weights: ['400', '500'] },
       ],
       // Use locally saved images; fall back to original URLs if download failed
       images: localImageUrls.length > 0 ? localImageUrls : rawImages,
+      imageCategories: visualDna?.categories || null,
     };
 
     update({
