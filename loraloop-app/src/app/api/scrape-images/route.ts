@@ -13,10 +13,10 @@ function isUsefulImage(url: string): boolean {
     "sprite", "icon-", "-icon.", "flag-", "star-rating", "badge-",
     "captcha", "recaptcha", "cookie", "widget", "ads/", "/ad/",
     "doubleclick", "googletagmanager", "hotjar", "clarity.ms",
-    ".svg", ".gif", ".ico", ".bmp", ".webp?w=1", ".webp?w=2",
+    ".gif", ".ico", ".bmp", ".webp?w=1", ".webp?w=2",
   ];
   if (blocked.some(b => lower.includes(b))) return false;
-  if (!/(jpg|jpeg|png|webp|avif)/i.test(lower)) return false;
+  if (!/(jpg|jpeg|png|webp|avif|svg)/i.test(lower)) return false;
   return true;
 }
 
@@ -214,6 +214,28 @@ export async function POST(req: Request) {
         return "#" + m.slice(1).map(n => parseInt(n).toString(16).padStart(2, '0')).join('');
       };
 
+      // 1. CSS Variables (Highest priority)
+      try {
+        const rootStyles = window.getComputedStyle(document.documentElement);
+        for (const key of Array.from(rootStyles)) {
+          if (key.startsWith('--')) {
+            const lowerKey = key.toLowerCase();
+            if (lowerKey.includes('color') || lowerKey.includes('brand') || lowerKey.includes('primary') || lowerKey.includes('accent')) {
+              const val = rootStyles.getPropertyValue(key).trim();
+              if (/^(#|rgb|hsl)/.test(val)) {
+                const hex = val.startsWith('rgb') ? rgbToHex(val) : val;
+                colorCounts[hex] = (colorCounts[hex] || 0) + 100;
+              }
+            }
+            if (lowerKey.includes('font')) {
+              const val = rootStyles.getPropertyValue(key).trim().split(",")[0].replace(/['"]/g, "");
+              if (val && val !== 'inherit') fontCounts[val] = (fontCounts[val] || 0) + 100;
+            }
+          }
+        }
+      } catch {}
+
+      // 2. Computed Styles
       document.querySelectorAll("h1, h2, h3, p, a, button, div, section, header, footer").forEach(el => {
         try {
           const cs = window.getComputedStyle(el as Element);
@@ -266,17 +288,22 @@ export async function POST(req: Request) {
     console.log(`[scrape-images] ✅ ${allImages.size} raw → ${finalImages.length} scored images`);
 
     // ── Vision AI Pass (Pomelli-style) ──
-    const topCandidates = finalImages.slice(0, 24);
+    const topCandidates = finalImages.slice(0, 30);
     const inlineImages: { inlineData: { data: string; mimeType: string } }[] = [];
     const validUrls: string[] = [];
 
     await Promise.all(topCandidates.map(async (u) => {
       try {
+        if (u.toLowerCase().endsWith('.svg')) {
+          validUrls.push(u);
+          return;
+        }
         const resp = await fetch(u, { signal: AbortSignal.timeout(4000) });
         if (!resp.ok) return;
         const ct = resp.headers.get("content-type") || "image/jpeg";
         const buffer = Buffer.from(await resp.arrayBuffer());
         if (buffer.length > 4 * 1024 * 1024) return; // skip >4MB
+        if (buffer.length < 2000) return; // skip tiny junk
         
         inlineImages.push({
           inlineData: { data: buffer.toString("base64"), mimeType: ct }
@@ -292,13 +319,17 @@ export async function POST(req: Request) {
     };
     
     if (inlineImages.length > 0) {
-      console.log(`[scrape-images] 🤖 Passing ${inlineImages.length} individual images to Gemini Vision...`);
+      console.log(`[scrape-images] 🤖 Passing ${inlineImages.length} images to Gemini Vision...`);
       const promptText = `Analyze these individual assets extracted from a brand's website.
       
 Here are their exact URLs in the same order:
 ${validUrls.map((u, i) => `[Image ${i + 1}]: ${u}`).join("\n")}
 
-Extract the Brand DNA into this exact JSON structure:
+Here is the raw CSS data extracted directly from the website's stylesheet:
+- Extracted Colors (Hex/RGB): ${JSON.stringify(siteColors)}
+- Extracted Fonts: ${JSON.stringify(siteFonts)}
+
+Extract the true Brand DNA into this exact JSON structure:
 {
   "brandColors": {
     "primary": ["hex code"],
@@ -320,8 +351,8 @@ Extract the Brand DNA into this exact JSON structure:
 Rules:
 1. Return ONLY valid JSON, no markdown.
 2. For image categories, ONLY use the exact URLs provided in the list above. Every URL MUST be in exactly one category.
-3. For colors, rely on the provided images (e.g., logo colors, graphic colors) to determine the true primary brand colors. If you cannot determine them from the images, return empty arrays.
-4. Products = clear photos of products. Lifestyle = people/environments. LogosAndAssets = graphics. Junk = icons/pixels.`;
+3. For brandColors and fonts, prioritize the raw CSS data provided above. Choose the most likely primary/secondary colors from that list. If the list has generic colors (like pure black or white), look at the logo and assets to find the real accent/primary brand color.
+4. Products = clear photos of products. Lifestyle = people/environments. LogosAndAssets = graphics, SVGs, logos. Junk = icons, tracking pixels.`;
 
       try {
         const aiResult = await callGemini({
