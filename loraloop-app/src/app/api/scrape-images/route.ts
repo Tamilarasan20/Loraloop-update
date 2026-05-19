@@ -116,6 +116,9 @@ export async function POST(req: Request) {
     }
     await page.waitForTimeout(400);
 
+    // ── Capture Full Page Screenshot for Brand DNA Analysis ──
+    const screenshotBuffer = await page.screenshot({ fullPage: true, type: "jpeg", quality: 60 });
+
     // DOM extraction — images, colors, and fonts
     const domExtracted: any = await page.evaluate((baseUrl) => {
       const seen = new Set<string>();
@@ -289,104 +292,52 @@ export async function POST(req: Request) {
 
     // ── Vision AI Pass (Pomelli-style) ──
     const topCandidates = finalImages.slice(0, 30);
-    const inlineImages: { inlineData: { data: string; mimeType: string } }[] = [];
-    const validUrls: string[] = [];
-
-    await Promise.all(topCandidates.map(async (u) => {
-      try {
-        if (u.toLowerCase().endsWith('.svg')) {
-          validUrls.push(u);
-          return;
-        }
-        const resp = await fetch(u, { signal: AbortSignal.timeout(4000) });
-        if (!resp.ok) return;
-        const ct = resp.headers.get("content-type") || "image/jpeg";
-        const buffer = Buffer.from(await resp.arrayBuffer());
-        if (buffer.length > 4 * 1024 * 1024) return; // skip >4MB
-        if (buffer.length < 2000) return; // skip tiny junk
-        
-        inlineImages.push({
-          inlineData: { data: buffer.toString("base64"), mimeType: ct }
-        });
-        validUrls.push(u);
-      } catch { /* skip */ }
-    }));
+    const validUrls = topCandidates.filter(u => u.startsWith("http"));
 
     let dnaResult: any = { 
-      images: { products: [], lifestyle: [], logosAndAssets: [], junk: [] },
       colors: siteColors,
-      fonts: siteFonts
+      fonts: siteFonts,
+      logoUrl: validUrls.find(u => u.toLowerCase().includes("logo")) || null,
+      images: validUrls
     };
     
-    if (inlineImages.length > 0) {
-      console.log(`[scrape-images] 🤖 Passing ${inlineImages.length} images to Gemini Vision...`);
-      const promptText = `Analyze these individual assets extracted from a brand's website.
-      
-Here are their exact URLs in the same order:
-${validUrls.map((u, i) => `[Image ${i + 1}]: ${u}`).join("\n")}
-
-Here is the raw CSS data extracted directly from the website's stylesheet:
-- Extracted Colors (Hex/RGB): ${JSON.stringify(siteColors)}
-- Extracted Fonts: ${JSON.stringify(siteFonts)}
-
+    console.log(`[scrape-images] 🤖 Passing screenshot to Gemini Vision for Brand DNA...`);
+    const promptText = `You are an expert Brand Designer. I am providing a full-page screenshot of a brand's website.
+    
 Extract the true Brand DNA into this exact JSON structure:
 {
   "brandColors": {
-    "primary": ["hex code"],
-    "secondary": ["hex codes"]
+    "primary": ["hex code", "hex code"],
+    "secondary": ["hex code", "hex code"]
   },
   "fonts": {
-    "headings": "font name",
-    "body": "font name"
-  },
-  "logoUrl": "exact url of the best logo from the assets",
-  "images": {
-    "products": ["url1"],
-    "lifestyle": ["url2"],
-    "logosAndAssets": ["url3"],
-    "junk": ["url4"]
+    "headings": "Font Name",
+    "body": "Font Name"
   }
 }
 
 Rules:
 1. Return ONLY valid JSON, no markdown.
-2. For image categories, ONLY use the exact URLs provided in the list above. Every URL MUST be in exactly one category.
-3. For brandColors and fonts, prioritize the raw CSS data provided above. Choose the most likely primary/secondary colors from that list. If the list has generic colors (like pure black or white), look at the logo and assets to find the real accent/primary brand color.
-4. Products = clear photos of products. Lifestyle = people/environments. LogosAndAssets = graphics, SVGs, logos. Junk = icons, tracking pixels.`;
+2. Carefully analyze the screenshot. The primary colors are usually the background color, the prominent button color, and the header color. Secondary colors are text colors and borders.
+3. Determine the typography by looking at the main headings and the body text.`;
 
-      try {
-        const aiResult = await callGemini({
-          taskType: "image-analysis",
-          prompt: promptText,
-          images: inlineImages,
-          mimeType: "application/json",
-          maxRetries: 1
-        });
-        dnaResult = JSON.parse(aiResult.text);
-      } catch (err: any) {
-        console.error("[scrape-images] ⚠ AI categorization failed:", err.message);
-        dnaResult.images.products = validUrls;
-      }
+    try {
+      const aiResult = await callGemini({
+        taskType: "image-analysis",
+        prompt: promptText,
+        images: [{ inlineData: { data: screenshotBuffer.toString("base64"), mimeType: "image/jpeg" } }],
+        mimeType: "application/json",
+        maxRetries: 1
+      });
+      const parsed = JSON.parse(aiResult.text);
+      if (parsed.brandColors) dnaResult.brandColors = parsed.brandColors;
+      if (parsed.fonts) dnaResult.fonts = parsed.fonts;
+    } catch (err: any) {
+      console.error("[scrape-images] ⚠ AI DNA extraction failed:", err.message);
     }
 
-    const categorized = dnaResult.images || {};
-    
-    // Filter out junk, keep the rest
-    const qualityImagesSet = new Set([
-      ...(categorized.products || []),
-      ...(categorized.lifestyle || []),
-      ...(categorized.logosAndAssets || [])
-    ]);
-    
-    // Add back the unanalyzed images from the top 80
-    for (const img of finalImages) {
-      if (!validUrls.includes(img) && !qualityImagesSet.has(img)) {
-        qualityImagesSet.add(img);
-      }
-    }
-    
-    const qualityImages = Array.from(qualityImagesSet);
-    console.log(`[scrape-images] 🎯 Final quality images: ${qualityImages.length} (Filtered ${categorized.junk?.length || 0} junk)`);
+    const qualityImages = validUrls;
+    console.log(`[scrape-images] 🎯 Final quality images: ${qualityImages.length}`);
 
     // Merge AI extracted colors with DOM extracted colors if missing
     const brandColors = dnaResult.brandColors?.primary?.length ? dnaResult.brandColors : { primary: siteColors.slice(0, 2), secondary: siteColors.slice(2, 6) };
@@ -411,6 +362,8 @@ Rules:
         console.log(`[scrape-images] 💾 Saved Brand DNA (colors, fonts, ${merged.length} images) to KB for ${business.business_name}`);
       }
     }
+
+    const categorized = null;
 
     return NextResponse.json({
       images: qualityImages,
