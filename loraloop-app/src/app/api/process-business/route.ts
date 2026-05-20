@@ -196,6 +196,7 @@ async function runPipeline(baseUrl: string, websiteUrl: string, businessId: stri
       business_profile: docs.businessProfile || '',
       market_research:  docs.marketResearch  || '',
       social_strategy:  docs.strategy        || '',
+      growth_goals:     docs.growthGoals     || '',
       status: 'completed',
     });
 

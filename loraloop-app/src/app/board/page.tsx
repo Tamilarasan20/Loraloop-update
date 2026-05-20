@@ -6,7 +6,7 @@ import BrandBoard from "@/components/BrandBoard";
 import VisualAssetGallery from "@/components/VisualAssetGallery";
 import {
   Loader2, FileText, X, Pencil, Trash2, Save, Eye, ChevronRight,
-  BookOpen, BarChart2, Users, AlertTriangle, CheckCircle2, Sparkles, RefreshCw, Image as ImageIcon
+  BookOpen, BarChart2, Users, AlertTriangle, CheckCircle2, Sparkles, RefreshCw, Image as ImageIcon, Target
 } from "lucide-react";
 
 // ─────────────────────────────────────────────
@@ -143,7 +143,7 @@ function SimpleMarkdown({ content }: { content: string }) {
 // ─────────────────────────────────────────────
 // Document config
 // ─────────────────────────────────────────────
-type DocKey = 'strategy' | 'marketResearch' | 'businessProfile';
+type DocKey = 'strategy' | 'marketResearch' | 'businessProfile' | 'growthGoals';
 
 interface DocMeta {
   key: DocKey;
@@ -183,12 +183,22 @@ const DOC_META: DocMeta[] = [
     bgColor: '#F0FDF4',
     Icon: BookOpen,
   },
+  {
+    key: 'growthGoals',
+    dbField: 'growth_goals',
+    label: 'Growth Goals & Execution Rules',
+    description: 'Business goals, offers, funnel map, approval rules & KPI scorecard',
+    color: '#C2410C',
+    bgColor: '#FFF7ED',
+    Icon: Target,
+  },
 ];
 
 interface BrandDocuments {
   strategy: string;
   marketResearch: string;
   businessProfile: string;
+  growthGoals: string;
 }
 
 // word count helper
@@ -333,7 +343,7 @@ function DocModal({ meta, content, businessId, onSave, onDelete, onClose }: DocM
         <div className="flex-1 overflow-y-auto">
           {mode === 'view' ? (
             <div className="px-10 py-8">
-              {content && content.trim() && content !== 'No business profile generated.' && content !== 'No market research generated.' && content !== 'No social strategy generated.' ? (
+              {content && content.trim() && !content.startsWith('No ') ? (
                 <SimpleMarkdown content={content} />
               ) : (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -399,7 +409,7 @@ function DocCard({ meta, content, businessId, onOpen, onDelete, onRegenerate }: 
       const res = await fetch("/api/regenerate-doc", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessId, docType: { businessProfile: "businessProfile", marketResearch: "marketResearch", strategy: "socialStrategy" }[meta.key] }),
+        body: JSON.stringify({ businessId, docType: { businessProfile: "businessProfile", marketResearch: "marketResearch", strategy: "socialStrategy", growthGoals: "growthGoals" }[meta.key] }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Generation failed");
@@ -507,6 +517,7 @@ const REGEN_API_TYPE: Record<DocKey, string> = {
   businessProfile: "businessProfile",
   marketResearch: "marketResearch",
   strategy: "socialStrategy",
+  growthGoals: "growthGoals",
 };
 
 function isDocEmpty(content: string) {
@@ -563,6 +574,7 @@ function BoardContent() {
           strategy: data.social_strategy || "",
           marketResearch: data.market_research || "",
           businessProfile: data.business_profile || "",
+          growthGoals: data.growth_goals || "",
         };
         setDocs(freshDocs);
 

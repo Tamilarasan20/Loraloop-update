@@ -51,6 +51,7 @@ const STAGES = [
       "Business Profile",
       "Market Research",
       "Social Strategy",
+      "Growth Goals & Rules",
     ],
   },
 ];

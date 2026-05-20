@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { chromium, Browser, Page } from "playwright";
 import { callGemini } from "@/lib/gemini";
+import { buildKbPrompt, KB_TASK_TYPE, type BrandContext } from "@/lib/kbPrompts";
 
 // ────────────────────────────────────────────────────────────────
 // UTILITY
@@ -1341,97 +1342,40 @@ STRICT REQUIREMENTS:
     // PHASE 3 — DOCUMENT GENERATION
     // ══════════════════════════════════════════════════════════
 
-    const brandContext = `
-Brand: ${parsedDna.brandName}
-Website: ${url}
-Overview: ${parsedDna.businessOverview}
-Tagline: ${parsedDna.tagline}
-Brand Values: ${parsedDna.brandValue}
-Brand Aesthetic: ${parsedDna.brandAesthetic}
-Tone of Voice: ${parsedDna.toneOfVoice}
-Website Text: """${textSample.slice(0, 3000)}"""
-`.trim();
-
-    const docPrompts = {
-      businessProfile: `You are a senior brand analyst. Using ONLY information from the website text below, write a detailed Business Profile document in markdown.
-
-${brandContext}
-
-Write the Business Profile with these exact sections:
-# ${parsedDna.brandName} – Business Profile
-
-## Overview
-2-3 paragraphs: what the business does, mission, founding story if mentioned, market positioning.
-
-## Products & Services
-List every product or service mentioned with a short description of each.
-
-## Key Selling Points
-5-8 bullet points of the most compelling reasons to choose this brand.
-
-## Retail Presence
-Where products are sold — online store, retailers, marketplaces, physical locations.
-
-## Target Audience
-Demographics, psychographics, interests based on the website tone and content.
-
-Rules: Only facts from website text. Use ## headers, - bullets, **bold** key terms. Min 400 words.`,
-
-      marketResearch: `You are a senior market researcher. Write a comprehensive Market Research document in markdown.
-
-${brandContext}
-
-Write the Market Research with these exact sections:
-# ${parsedDna.brandName} – Market Research
-
-## Market Opportunity
-The market this brand operates in, current trends, growth indicators, why now is a good time.
-
-## Competitive Landscape
-List 8-10 REAL named competitor companies. For each, 1-2 lines on what they do and how they compare.
-
-## SEO & GEO Keywords
-15-20 high-value search keywords grouped by intent (informational, commercial, transactional).
-
-## Target Audiences on Social
-4-5 distinct audience segments — platform preferences, what content resonates, how to reach them.
-
-Rules: Real named competitors only. Use ## headers, - bullets, **bold** key names. Min 500 words.`,
-
-      strategy: `You are a senior social media strategist. Write a detailed Social Media Strategy document in markdown.
-
-${brandContext}
-
-Write the Social Media Strategy with these exact sections:
-# ${parsedDna.brandName} – Social Media Strategy
-
-## Priority Platforms
-Top 3-4 platforms — why each is a priority, audience, and content format.
-
-## Content Pillars
-4-6 content themes with name, description, 2-3 example post ideas each.
-
-## Posting Cadence
-Recommended posting frequency per platform.
-
-## Messaging Hierarchy
-3-4 core messages ranked by priority — lead message, secondary hooks, proof points.
-
-## Quick Wins
-5-7 immediately actionable tactics for the next 30 days.
-
-Rules: Specific to ${parsedDna.brandName}'s industry. Tone of voice: ${parsedDna.toneOfVoice}. Min 500 words.`,
+    const kbContext: BrandContext = {
+      brandName:     parsedDna.brandName || "Brand",
+      website:       url,
+      overview:      parsedDna.businessOverview,
+      tagline:       parsedDna.tagline,
+      brandValues:   parsedDna.brandValue,
+      brandAesthetic: parsedDna.brandAesthetic,
+      toneOfVoice:   parsedDna.toneOfVoice,
+      scrapedText:   textSample.slice(0, 4500),
     };
 
-    const [businessProfile, marketResearch, strategy] = await Promise.all([
-      callGemini({ taskType: "business-profile", prompt: docPrompts.businessProfile, minLength: 300 }).then(r => r.text).catch(() => ""),
-      callGemini({ taskType: "market-research", prompt: docPrompts.marketResearch, minLength: 300 }).then(r => r.text).catch(() => ""),
-      callGemini({ taskType: "social-strategy", prompt: docPrompts.strategy, minLength: 300 }).then(r => r.text).catch(() => ""),
+    const callDoc = (docType: "businessProfile" | "marketResearch" | "socialStrategy" | "growthGoals") =>
+      callGemini({
+        taskType: KB_TASK_TYPE[docType] as any,
+        prompt: buildKbPrompt(docType, kbContext),
+        minLength: 400,
+      }).then(r => r.text).catch((e) => {
+        console.warn(`[extract-dna] ${docType} failed:`, e?.message);
+        return "";
+      });
+
+    const [businessProfile, marketResearch, strategy, growthGoals] = await Promise.all([
+      callDoc("businessProfile"),
+      callDoc("marketResearch"),
+      callDoc("socialStrategy"),
+      callDoc("growthGoals"),
     ]);
 
-    console.log(`[extract-dna] 📄 Docs — profile:${businessProfile.length} research:${marketResearch.length} strategy:${strategy.length}`);
+    console.log(`[extract-dna] 📄 Docs — profile:${businessProfile.length} research:${marketResearch.length} strategy:${strategy.length} goals:${growthGoals.length}`);
 
-    return NextResponse.json({ dna: parsedDna, documents: { businessProfile, marketResearch, strategy } });
+    return NextResponse.json({
+      dna: parsedDna,
+      documents: { businessProfile, marketResearch, strategy, growthGoals },
+    });
 
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "An unexpected server error occurred.";
